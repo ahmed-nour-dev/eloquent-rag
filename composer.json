@@ -1,0 +1,66 @@
+{
+    "name": "ahmednour/eloquent-rag",
+    "description": "The Eloquent synchronization layer for Laravel AI's RAG stack — model lifecycle sync, dependency tracking, invalidation, chunk management, and rebuild tooling.",
+    "keywords": [
+        "laravel",
+        "eloquent",
+        "rag",
+        "vector",
+        "ai",
+        "embeddings"
+    ],
+    "homepage": "https://github.com/ahmednour/eloquent-rag",
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Ahmed Nour",
+            "email": "a.nour@it-gates.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/database": "^13.27",
+        "illuminate/support": "^13.27",
+        "illuminate/queue": "^13.27"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0",
+        "laravel/pint": "^1.17",
+        "larastan/larastan": "^2.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ahmednour\\EloquentRag\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ahmednour\\EloquentRag\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage",
+        "format": "vendor/bin/pint",
+        "analyse": "vendor/bin/phpstan analyse"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Ahmednour\\EloquentRag\\EloquentRagServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
