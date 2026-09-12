@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag\Concerns;
 
 use Ahmednour\EloquentRag\RagDefinition;
+use Ahmednour\EloquentRag\RagSearch;
 use Ahmednour\EloquentRag\RagSynchronizer;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
  * Wires a model into the RAG sync lifecycle: created/updated/restored queue
@@ -40,6 +42,24 @@ trait HasRag
     public function resyncRag(): void
     {
         $this->rag()->sync();
+    }
+
+    /**
+     * Vector search scoped to this model type, returning hydrated models
+     * ordered by relevance — see RagSearch.
+     *
+     * The build plan describes this as `Product::rag()->search(...)`, but
+     * that literal shape is not possible in PHP once `rag()` above already
+     * exists as a real instance method: a class cannot declare the same
+     * method name as both instance and static, and PHP raises a hard
+     * "cannot call non-static method statically" error rather than falling
+     * through to __callStatic. `searchRag()` is the static entry point
+     * instead; `Rag::search(static::class, ...)` is the equivalent
+     * class-agnostic form.
+     */
+    public static function searchRag(string $query, int $limit = 10): EloquentCollection
+    {
+        return (new RagSearch(static::class))->search($query, $limit);
     }
 
     protected static function bootHasRag(): void

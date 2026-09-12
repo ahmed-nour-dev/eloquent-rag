@@ -19,15 +19,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Embedding identity (Phase 2 placeholder)
+    | Embedding identity
     |--------------------------------------------------------------------------
     |
-    | These values feed configuration_hash only. Phase 2 makes no real
-    | embedding calls — Phase 3 wires this up to Laravel AI. Declaring them
-    | now means switching embedding models/dimensions later invalidates
-    | every document automatically, exactly as ADR-0004 intends.
+    | Fed into ADR-0004's configuration_hash (so switching models/dimensions
+    | invalidates every document automatically) and, from Phase 3 onward,
+    | into the real laravel/ai Embeddings::for(...)->generate() call.
+    | `provider` is null by default, meaning "use laravel/ai's own
+    | config('ai.default_for_embeddings')" — set it explicitly to pin a
+    | specific provider regardless of the app's general AI default.
     */
     'embedding' => [
+        'provider' => null,
         'model' => 'text-embedding-3-small',
         'dimensions' => 1536,
     ],

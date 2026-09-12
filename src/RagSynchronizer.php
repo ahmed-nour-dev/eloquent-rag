@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
 use Ahmednour\EloquentRag\Jobs\SyncRagDocument;
+use Ahmednour\EloquentRag\Models\RagChunk;
 use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Support\Chunker;
 use Ahmednour\EloquentRag\Support\Hasher;
 use Ahmednour\EloquentRag\Support\RagDocumentBuilder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Laravel\Ai\Embeddings;
 
 /**
  * The one true sync routine for a single model instance, used identically
@@ -101,6 +104,59 @@ final class RagSynchronizer
     public function forget(): void
     {
         $this->findDocument()?->delete();
+    }
+
+    /**
+     * Generates real embeddings (via laravel/ai) for this document's chunks
+     * that don't have one yet, and writes them to rag_chunks.embedding.
+     *
+     * Deliberately NOT called from sync() — sync() stays exactly as
+     * Phase 2 built it (pure structural reconciliation, works on any
+     * driver including SQLite). embed() is the Phase 3 addition, and it
+     * requires a real vector-capable backend; call sync() first if source
+     * content may have changed, since chunk text isn't persisted and is
+     * re-derived here assuming the currently-stored chunk_index values are
+     * still current.
+     *
+     * @throws UnsupportedVectorBackend
+     */
+    public function embed(): void
+    {
+        VectorBackendCapability::ensureSupported();
+
+        $document = $this->findDocument();
+
+        if ($document === null) {
+            return;
+        }
+
+        $pendingChunks = $document->chunks()->whereNull('embedding')->orderBy('chunk_index')->get();
+
+        if ($pendingChunks->isNotEmpty()) {
+            $this->model->unsetRelations();
+            $rendered = (new RagDocumentBuilder)->render($this->model, $this->definition);
+            $chunkOptions = $this->chunkOptions();
+            $chunkTexts = (new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap']))->chunk($rendered);
+
+            $inputs = $pendingChunks
+                ->map(fn (RagChunk $chunk): string => $chunkTexts[$chunk->chunk_index] ?? '')
+                ->all();
+
+            $response = Embeddings::for($inputs)
+                ->dimensions((int) config('eloquent-rag.embedding.dimensions'))
+                ->generate(
+                    config('eloquent-rag.embedding.provider'),
+                    config('eloquent-rag.embedding.model'),
+                );
+
+            foreach ($pendingChunks->values() as $index => $chunk) {
+                $chunk->update(['embedding' => $response->embeddings[$index]]);
+            }
+        }
+
+        if ($document->chunks()->whereNull('embedding')->doesntExist()) {
+            $document->update(['status' => 'synced']);
+        }
     }
 
     private function findDocument(): ?RagDocument

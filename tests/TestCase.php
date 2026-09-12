@@ -6,6 +6,7 @@ namespace Ahmednour\EloquentRag\Tests;
 
 use Ahmednour\EloquentRag\EloquentRagServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\AiServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
@@ -17,7 +18,7 @@ abstract class TestCase extends Orchestra
      */
     protected function getPackageProviders($app): array
     {
-        return [EloquentRagServiceProvider::class];
+        return [EloquentRagServiceProvider::class, AiServiceProvider::class];
     }
 
     protected function defineEnvironment($app): void
