@@ -37,3 +37,4 @@ package is built on:
 - [ADR-0004](adr/0004-identity-and-hashing-scheme.md) — Identity + hashing scheme
 - [ADR-0005](adr/0005-fanout-policy.md) — Fan-out policy
 - [ADR-0006](adr/0006-transaction-queue-boundary.md) — Transaction/queue boundary
+- [ADR-0007](adr/0007-pivot-change-detection.md) — Pivot change detection (open, pre-Phase 2)

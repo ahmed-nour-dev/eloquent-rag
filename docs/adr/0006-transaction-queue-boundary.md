@@ -1,6 +1,7 @@
 # ADR-0006: Transaction/queue boundary — when a job gets dispatched relative to commit
 
-**Status:** Proposed
+**Status:** Confirmed by the Phase 0 spike — see
+[docs/spikes/0001-dependency-graph.md](../spikes/0001-dependency-graph.md)
 
 ## Context
 
@@ -13,7 +14,22 @@ job can race the transaction and read a pre-commit, inconsistent state.
 
 Separately, some write paths never fire model events at all —
 `Category::where(...)->update()` (mass update) bypasses Eloquent observers
-entirely, so no invalidation is triggered by default.
+entirely, so no invalidation is triggered by default. The same is true of
+bulk inserts (`DB::table(...)->insert()`).
+
+This risk is concrete specifically for queue backends that are **not**
+part of the app's own database transaction — Redis, SQS, Beanstalkd, or a
+`database`-driver queue connection that is physically separate from the
+app's default connection (the normal, correct setup). If the queue happens
+to share the exact same database connection as the app, a job dispatched
+without after-commit protection can incidentally get swept into — and
+rolled back with — the enclosing transaction anyway, which can mask this
+issue in a naive same-connection test setup. The protection this ADR
+mandates is what makes the behavior correct and connection-topology
+independent, rather than correct by accident. (Confirmed by the Phase 0
+spike: proving this cleanly required deliberately separating the queue's
+database connection from the app's, per
+[docs/spikes/0001-dependency-graph.md](../spikes/0001-dependency-graph.md#2-the-aftercommit-protection-only-bites-when-the-queue-isnt-the-same-transactional-resource-as-the-app-db).)
 
 ## Decision
 
