@@ -6,10 +6,17 @@ namespace Ahmednour\EloquentRag\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
- * Schema scaffolding only. Lifecycle wiring (observers, sync, invalidation)
- * is Phase 2 scope.
+ * @property int $id
+ * @property string $model_type
+ * @property int|string $model_id
+ * @property int $version
+ * @property string $content_hash
+ * @property string $configuration_hash
+ * @property string $status
+ * @property Carbon|null $synced_at
  */
 class RagDocument extends Model
 {
@@ -21,11 +28,17 @@ class RagDocument extends Model
         'synced_at' => 'datetime',
     ];
 
+    /**
+     * @return HasMany<RagChunk, $this>
+     */
     public function chunks(): HasMany
     {
         return $this->hasMany(RagChunk::class, 'document_id');
     }
 
+    /**
+     * @return HasMany<RagDependency, $this>
+     */
     public function dependencies(): HasMany
     {
         return $this->hasMany(RagDependency::class, 'document_id');

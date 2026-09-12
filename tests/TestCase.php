@@ -29,6 +29,12 @@ abstract class TestCase extends Orchestra
             'prefix' => '',
             'foreign_key_constraints' => true,
         ]);
+
+        // Most tests want queued jobs (created/updated/restored ->
+        // rag()->queue(), and fan-out dispatch) to run inline. The
+        // transaction-boundary test overrides this to a real database
+        // queue driver on a separate connection — see its own setup.
+        $app['config']->set('queue.default', 'sync');
     }
 
     protected function defineDatabaseMigrations(): void
