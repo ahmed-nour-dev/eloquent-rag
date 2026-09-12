@@ -22,8 +22,17 @@ parameters:
             # statically sees $this as Pest\PendingCalls\TestCall and
             # reports methods that genuinely exist as undefined. Known
             # Pest/PHPStan interop gap, not a real bug.
-            message: '#Call to an undefined method Pest\\PendingCalls\\TestCall::artisan\(\)#'
+            message: '#Call to an undefined method Pest\\PendingCalls\\TestCall::(artisan|markTestSkipped)\(\)#'
             path: tests/*
+        -
+            # The Phase 5 acceptance-test base classes read RAG_TEST_* env
+            # vars directly (not via config/*.php) because they configure an
+            # opt-in, CI-only database connection at test-run time — there
+            # is no cached application config in a Testbench test process
+            # for this rule's caching concern to apply to. Scoped to exactly
+            # these two files, not a blanket allowance for env() elsewhere.
+            message: '#^Called ''env'' outside of the config directory#'
+            path: tests/Integration/*AcceptanceTestCase.php
         -
             # $modelClass in rag:sync/rag:rebuild is a runtime string
             # naming an arbitrary HasRag-using Eloquent model, supplied by
