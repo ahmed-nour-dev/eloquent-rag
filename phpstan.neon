@@ -1,5 +1,6 @@
 includes:
     - vendor/larastan/larastan/extension.neon
+    - vendor/pestphp/pest/phpstan-pest-extension.neon
 
 parameters:
     paths:
@@ -7,3 +8,33 @@ parameters:
         - tests
 
     level: 5
+
+    ignoreErrors:
+        -
+            # Pest binds $this inside global it()/test() closures to the
+            # real bound TestCase (tests/Pest.php declares
+            # uses(TestCase::class)->in(__DIR__), and Ahmednour\EloquentRag\
+            # Tests\TestCase extends Orchestra\Testbench\TestCase, which
+            # has real access to artisan() via InteractsWithConsole) —
+            # proven at runtime by every test in this suite passing.
+            # PHPStan's Pest extension only resolves expect()'s
+            # higher-order typing, not $this inside these closures, so it
+            # statically sees $this as Pest\PendingCalls\TestCall and
+            # reports methods that genuinely exist as undefined. Known
+            # Pest/PHPStan interop gap, not a real bug.
+            message: '#Call to an undefined method Pest\\PendingCalls\\TestCall::artisan\(\)#'
+            path: tests/*
+        -
+            # $modelClass in rag:sync/rag:rebuild is a runtime string
+            # naming an arbitrary HasRag-using Eloquent model, supplied by
+            # the CLI caller. There is no way to statically carry the
+            # HasRag trait's rag() method through a dynamic class-string
+            # ($class::find($id), $class::query()->chunkById(...)) — the
+            # resolved instances are always typed as the base Model, and
+            # the class-string itself originates from raw Artisan input,
+            # never a compile-time-known type, so no generic bound can fix
+            # this. Not a bug: pointing rag:sync/rag:rebuild at a model
+            # that doesn't use HasRag is a user error that surfaces as a
+            # clear runtime exception, which is correct CLI behavior.
+            message: '#Call to an undefined method Illuminate\\Database\\Eloquent\\Model::rag\(\)#'
+            path: src/Console/Commands/Concerns/ProcessesRagModels.php

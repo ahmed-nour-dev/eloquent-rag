@@ -34,3 +34,22 @@ it('rejects the real SQLite test connection as an unsupported vector backend', f
     expect(fn () => VectorBackendCapability::ensureSupported())
         ->toThrow(UnsupportedVectorBackend::class);
 });
+
+/**
+ * parseVectorDimensions() is pure — fed literal type-description strings
+ * shaped like MariaDB's information_schema.columns.COLUMN_TYPE or
+ * Postgres's format_type() output (rag:doctor's dimension-mismatch check
+ * uses this). The database queries that actually produce these strings on
+ * a real server cannot be exercised against a real MariaDB 11.7+/pgvector
+ * connection in this sandbox — only this parsing half is verified here.
+ */
+it('extracts the declared dimension count from a vector column type description', function (?string $typeDescription, ?int $expected) {
+    expect(VectorBackendCapability::parseVectorDimensions($typeDescription))->toBe($expected);
+})->with([
+    'MariaDB COLUMN_TYPE' => ['vector(1536)', 1536],
+    'Postgres format_type()' => ['vector(1536)', 1536],
+    'uppercase' => ['VECTOR(768)', 768],
+    'no dimension specified' => ['vector', null],
+    'unrelated column type' => ['text', null],
+    'null (query returned no row)' => [null, null],
+]);

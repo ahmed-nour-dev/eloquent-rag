@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Console\Commands\RagDependenciesCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagDoctorCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagForgetCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagPruneCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagRebuildCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagStatusCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagSyncCommand;
 use Ahmednour\EloquentRag\Models\RagChunk;
 use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
@@ -27,6 +34,16 @@ class EloquentRagServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../config/eloquent-rag.php' => config_path('eloquent-rag.php'),
             ], 'eloquent-rag-config');
+
+            $this->commands([
+                RagDoctorCommand::class,
+                RagStatusCommand::class,
+                RagSyncCommand::class,
+                RagRebuildCommand::class,
+                RagPruneCommand::class,
+                RagForgetCommand::class,
+                RagDependenciesCommand::class,
+            ]);
         }
     }
 

@@ -101,4 +101,28 @@ final class VectorBackendCapability
     {
         return $row !== null;
     }
+
+    /**
+     * Extracts the declared dimension count from a column type description,
+     * e.g. MariaDB's `information_schema.columns.COLUMN_TYPE` ("vector(1536)")
+     * or Postgres's `format_type(atttypid, atttypmod)` output (also
+     * "vector(1536)" — pgvector uses the same textual shape there). Used by
+     * rag:doctor's dimension-mismatch check. Kept pure/testable with
+     * literal fixture strings — the actual information_schema/pg_attribute
+     * query that produces this string lives in the command itself and
+     * cannot be exercised against a real MariaDB 11.7+/pgvector server in
+     * this package's own SQLite-based test suite.
+     */
+    public static function parseVectorDimensions(?string $typeDescription): ?int
+    {
+        if ($typeDescription === null) {
+            return null;
+        }
+
+        if (preg_match('/vector\((\d+)\)/i', $typeDescription, $matches) !== 1) {
+            return null;
+        }
+
+        return (int) $matches[1];
+    }
 }

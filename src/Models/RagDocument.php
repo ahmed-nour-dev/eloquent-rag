@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $content_hash
  * @property string $configuration_hash
  * @property string $status
+ * @property string|null $last_error
  * @property Carbon|null $synced_at
  */
 class RagDocument extends Model

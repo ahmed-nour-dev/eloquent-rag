@@ -13,6 +13,7 @@ use Ahmednour\EloquentRag\Support\Hasher;
 use Ahmednour\EloquentRag\Support\RagDocumentBuilder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Embeddings;
 
 /**
@@ -32,8 +33,22 @@ final class RagSynchronizer
      * Renders, hashes, and (if anything actually changed) reconciles this
      * model's document, chunks, and dependency rows. Short-circuits on an
      * unchanged hash pair without touching the database at all.
+     *
+     * $force = true (used by rag:rebuild) skips the short-circuit entirely
+     * — always re-render/re-chunk/re-reconcile — and bumps `version` on an
+     * existing document. A normal (non-forced) sync never touches
+     * `version`, exactly as before this parameter existed.
+     *
+     * The document upsert + chunk reconcile + dependency reconcile run
+     * inside a single transaction so a failure partway through never
+     * leaves a document row pointing at partially-reconciled chunks or
+     * dependencies — this is what makes rag:rebuild a safe replacement
+     * rather than delete-and-pray. This method itself never catches its
+     * own exceptions; callers that need per-model failure isolation across
+     * a batch (rag:sync, rag:rebuild) are responsible for their own
+     * try/catch around each call.
      */
-    public function sync(): void
+    public function sync(bool $force = false): void
     {
         // attach()/detach()/sync() on a belongsToMany relation (the
         // ADR-0007 resyncRag() case) update the pivot table but do not
@@ -58,31 +73,42 @@ final class RagSynchronizer
 
         $existing = $this->findDocument();
 
-        if ($existing !== null
+        if (! $force
+            && $existing !== null
             && $existing->content_hash === $contentHash
             && $existing->configuration_hash === $configurationHash
         ) {
             return;
         }
 
-        $document = RagDocument::query()->updateOrCreate(
-            [
-                'model_type' => $this->model::class,
-                'model_id' => $this->model->getKey(),
-            ],
-            [
+        DB::transaction(function () use ($existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash): void {
+            $values = [
                 'content_hash' => $contentHash,
                 'configuration_hash' => $configurationHash,
                 // Phase 2 never produces a real embedding, so nothing is
                 // ever fully "synced" yet — Phase 3 introduces the status
-                // that means "actually embedded".
+                // that means "actually embedded". A successful sync also
+                // clears any previously recorded failure.
                 'status' => 'pending',
+                'last_error' => null,
                 'synced_at' => now(),
-            ],
-        );
+            ];
 
-        $this->reconcileChunks($document, $rendered, $chunkOptions);
-        $this->reconcileDependencies($document);
+            if ($force && $existing !== null) {
+                $values['version'] = $existing->version + 1;
+            }
+
+            $document = RagDocument::query()->updateOrCreate(
+                [
+                    'model_type' => $this->model::class,
+                    'model_id' => $this->model->getKey(),
+                ],
+                $values,
+            );
+
+            $this->reconcileChunks($document, $rendered, $chunkOptions);
+            $this->reconcileDependencies($document);
+        });
     }
 
     /**
