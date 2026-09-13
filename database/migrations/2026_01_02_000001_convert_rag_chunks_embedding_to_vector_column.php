@@ -30,10 +30,17 @@ return new class extends Migration
             return;
         }
 
-        Schema::table('rag_chunks', function (Blueprint $table) {
-            $table->vector('embedding', config('eloquent-rag.embedding.dimensions'))
-                ->nullable()
-                ->change();
+        $dimensions = config('eloquent-rag.embedding.dimensions');
+
+        Schema::table('rag_chunks', function (Blueprint $table) use ($driver, $dimensions) {
+            $column = $table->vector('embedding', $dimensions)->nullable();
+
+            if ($driver === 'pgsql') {
+                // Postgres refuses to auto-cast text -> vector; it has to be told how.
+                $column->using("embedding::vector({$dimensions})");
+            }
+
+            $column->change();
         });
     }
 
