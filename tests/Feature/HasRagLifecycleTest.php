@@ -125,6 +125,44 @@ it('cascades document, chunk, and dependency deletion when the model is deleted'
     expect(RagDependency::where('document_id', $documentId)->count())->toBe(0);
 });
 
+it('invalidates a chunk embedding when its content changes on resync', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $chunk = $document->chunks()->orderBy('chunk_index')->first();
+    $originalHash = $chunk->content_hash;
+    $chunk->update(['embedding' => [0.1, 0.2, 0.3]]);
+
+    $product->name = 'Speaker Pro';
+    $product->save();
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    $chunk->refresh();
+
+    expect($chunk->content_hash)->not->toBe($originalHash);
+    expect($chunk->embedding)->toBeNull();
+});
+
+it('leaves an unchanged chunk embedding untouched on resync', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $chunk = $document->chunks()->orderBy('chunk_index')->first();
+    $chunk->update(['embedding' => [0.1, 0.2, 0.3]]);
+
+    // Force a resync (nothing about the rendered content changed) and
+    // confirm the untouched chunk keeps its embedding.
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync(force: true);
+
+    $chunk->refresh();
+
+    expect($chunk->embedding)->not->toBeNull();
+});
+
 it('does not touch synced_at on a second sync() when nothing changed', function () {
     Carbon::setTestNow('2026-01-01 00:00:00');
 
