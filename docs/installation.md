@@ -3,7 +3,7 @@
 ## Requirements
 
 See [backend-support.md](backend-support.md) for the full matrix. In short:
-MariaDB 11.7+ on Laravel 13.27+, or PostgreSQL with the `pgvector`
+MariaDB 11.7+ on Laravel 13.29+, or PostgreSQL with the `pgvector`
 extension. Plain MySQL is not supported — there is no fallback.
 
 ## Install

@@ -70,15 +70,15 @@ class RagDoctorCommand extends Command
     private function checkLaravelVersion(): bool
     {
         $version = app()->version();
-        $meetsFloor = version_compare($version, '13.27.0', '>=');
+        $meetsFloor = version_compare($version, '13.29.0', '>=');
 
         if ($meetsFloor) {
-            $this->info("[PASS] Laravel {$version} meets the 13.27+ floor required for the native vector query builder (ADR-0003).");
+            $this->info("[PASS] Laravel {$version} meets the 13.29+ floor required for the native vector query builder (ADR-0003).");
 
             return true;
         }
 
-        $this->error("[FAIL] Laravel {$version} is below the 13.27 floor required for the native vector query builder (ADR-0003). Upgrade Laravel before configuring this package.");
+        $this->error("[FAIL] Laravel {$version} is below the 13.29 floor required for the native vector query builder (ADR-0003). Upgrade Laravel before configuring this package.");
 
         return false;
     }
