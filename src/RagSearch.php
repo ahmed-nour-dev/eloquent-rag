@@ -77,30 +77,34 @@ final class RagSearch
     }
 
     /**
-     * Ranks chunk-level rows by vector distance, then collapses to distinct
-     * document owner-model ids in first-seen (best match) order. Chunk-level
-     * rows are over-fetched by a fixed multiplier before deduping, since
-     * several of the closest chunks can belong to the same document —
-     * this is a simple, documented heuristic, not a guarantee of the true
-     * top-N distinct documents in every distribution.
+     * Ranks document owner-model ids by a document-level aggregate of their
+     * chunks' vector distances, rather than ranking chunk-level rows and
+     * deduplicating down to documents. A document's score is the distance
+     * of its single closest chunk (MIN), computed in SQL over every
+     * matching chunk — so a document with several near-duplicate chunks
+     * near the top does not crowd out a document whose one relevant chunk
+     * scores lower, and the result is the true top-N distinct documents
+     * for this vector, not a heuristic approximation of it.
      *
      * @param  array<int, float>  $vector
      * @return Collection<int, int|string>
      */
     private function rankedModelIds(array $vector, int $limit): Collection
     {
-        $overFetch = max($limit * 4, $limit);
-
-        return DB::table('rag_chunks')
+        $chunkDistances = DB::table('rag_chunks')
             ->join('rag_documents', 'rag_documents.id', '=', 'rag_chunks.document_id')
             ->where('rag_documents.model_type', $this->modelClass)
             ->whereNotNull('rag_chunks.embedding')
             ->when($this->scope, fn (Builder $builder) => ($this->scope)($builder))
-            ->orderByVectorDistance('rag_chunks.embedding', $vector)
-            ->limit($overFetch)
-            ->pluck('rag_documents.model_id')
-            ->unique()
-            ->take($limit)
-            ->values();
+            ->select('rag_documents.model_id')
+            ->selectVectorDistance('rag_chunks.embedding', $vector, 'distance');
+
+        return DB::query()
+            ->fromSub($chunkDistances, 'ranked_chunks')
+            ->select('ranked_chunks.model_id')
+            ->groupBy('ranked_chunks.model_id')
+            ->orderByRaw('MIN(ranked_chunks.distance) asc')
+            ->limit($limit)
+            ->pluck('ranked_chunks.model_id');
     }
 }
