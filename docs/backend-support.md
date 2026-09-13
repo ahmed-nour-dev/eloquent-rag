@@ -4,7 +4,7 @@
 
 | Target | Supported | Requirement |
 |---|---|---|
-| MariaDB 11.7+ | ✅ | Laravel 13.27+ |
+| MariaDB 11.7+ | ✅ | Laravel 13.29+ |
 | PostgreSQL + `pgvector` extension | ✅ | Laravel 13.x |
 | Plain MySQL 8.x | ❌ | No native vector backend — not supported, no fallback |
 | Pinecone / Qdrant / Weaviate | ❌ | Out of scope unless demonstrated demand emerges |
@@ -47,7 +47,7 @@ any infrastructure change (Laravel upgrade, database migration, changing
 
 | Check | Level | What it catches |
 |---|---|---|
-| Laravel version | FAIL | Below the 13.27 floor |
+| Laravel version | FAIL | Below the 13.29 floor |
 | Vector backend | FAIL | Wrong driver, MariaDB below 11.7, or Postgres missing `pgvector` — the real checks above, not just Laravel's grammar flag |
 | Embedding dimension | FAIL | `rag_chunks.embedding`'s actual declared vector size doesn't match `config('eloquent-rag.embedding.dimensions')` (skipped if the backend check above already failed) |
 | Queue driver | WARN | `queue.default` is `sync` — fan-out will run inline instead of batched, fine locally, not recommended in production |
@@ -61,9 +61,12 @@ blockers.
 
 ## Composer constraint discipline
 
-`composer.json` pins `illuminate/database: ^13.27`, not `^13.0`. The
+`composer.json` pins `illuminate/database: ^13.29`, not `^13.0`. The
 native vector query builder API is genuinely new (merged via Laravel PR
-#61250, with a follow-up fix in PR #61337 days later), so this constraint
-is treated as pinned to unstable/settling code: it gets widened only after
-a new point release has been explicitly run through this package's own CI
-matrix (`.github/workflows/tests.yml`), not proactively.
+#61250, with a follow-up SQL fix in PR #61337 that only landed in 13.29.0 —
+13.27.0, the previous released version, still emits
+`vec_distance_cosine(`embedding`, ?)` without the required
+`vec_fromtext(...)` wrapper for MariaDB), so this constraint is treated as
+pinned to unstable/settling code: it gets widened only after a new point
+release has been explicitly run through this package's own CI matrix
+(`.github/workflows/tests.yml`), not proactively.

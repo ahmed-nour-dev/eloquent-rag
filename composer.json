@@ -21,9 +21,9 @@
     ],
     "require": {
         "php": "^8.3",
-        "illuminate/database": "^13.27",
-        "illuminate/queue": "^13.27",
-        "illuminate/support": "^13.27",
+        "illuminate/database": "^13.29",
+        "illuminate/queue": "^13.29",
+        "illuminate/support": "^13.29",
         "laravel/ai": "^0.11.2"
     },
     "require-dev": {

@@ -48,17 +48,20 @@ jobs:
         if: matrix.laravel == 'latest'
         run: composer update --prefer-dist --no-interaction --no-progress
 
-      - name: Pin to the ADR-0003 13.27 floor
+      - name: Pin to the ADR-0003 13.29 floor
         if: matrix.laravel == 'floor'
         # Exact version confirmed to resolve cleanly against this package's
         # other dependencies (laravel/ai, orchestra/testbench, pest) before
         # being committed here — see the Phase 5 report for how that was
         # verified. This is specifically the leg that catches a regression
-        # like the one PR #61337 fixed days after the vector query builder
-        # API first merged (ADR-0003's whole reason for pinning ^13.27
-        # instead of ^13.0).
+        # like the one PR #61337 fixed: 13.27.0 (the version the vector
+        # query builder API first merged in) compiles MariaDB's vector
+        # distance expression without the required vec_fromtext(...)
+        # wrapper, so the floor is pinned to 13.29.0 — the first release
+        # containing that fix — not 13.27.0 (ADR-0003's whole reason for
+        # pinning ^13.29 instead of ^13.0).
         run: |
-          composer require "illuminate/database:13.27.0" "illuminate/support:13.27.0" "illuminate/queue:13.27.0" -W --no-interaction --no-progress
+          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" -W --no-interaction --no-progress
 
       - name: Wait for MariaDB
         run: |
@@ -119,10 +122,10 @@ jobs:
         if: matrix.laravel == 'latest'
         run: composer update --prefer-dist --no-interaction --no-progress
 
-      - name: Pin to the ADR-0003 13.27 floor
+      - name: Pin to the ADR-0003 13.29 floor
         if: matrix.laravel == 'floor'
         run: |
-          composer require "illuminate/database:13.27.0" "illuminate/support:13.27.0" "illuminate/queue:13.27.0" -W --no-interaction --no-progress
+          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" -W --no-interaction --no-progress
 
       - name: Enable pgvector on the test database
         run: |

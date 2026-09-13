@@ -24,7 +24,7 @@ depend on this in production until a real release exists.
 
 | Target | Supported | Requirement |
 |---|---|---|
-| MariaDB 11.7+ | ✅ | Laravel **13.27+** (vector query builder API) |
+| MariaDB 11.7+ | ✅ | Laravel **13.29+** (vector query builder API) |
 | PostgreSQL + pgvector | ✅ | Laravel 13.x |
 | Plain MySQL 8.x | ❌ | No native vector backend — not supported |
 

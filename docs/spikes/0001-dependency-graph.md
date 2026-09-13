@@ -18,7 +18,7 @@ decision point Phase 2 needs to make that isn't covered by any existing ADR.
 ## Environment
 
 - Laravel **13.31.0** (installed fresh via `composer create-project
-  laravel/laravel`; comfortably above the 13.27 floor in
+  laravel/laravel`; comfortably above the 13.29 floor in
   [ADR-0003](../adr/0003-backend-support-matrix.md)).
 - PHP 8.5.9.
 - **SQLite**, not MariaDB/pgvector. Phase 0 tests dependency-graph
