@@ -25,6 +25,7 @@ final class Hasher
     public static function configuration(
         RagDefinition $definition,
         array $chunkOptions,
+        ?string $embeddingProvider,
         string $embeddingModel,
         int $embeddingDimensions,
     ): string {
@@ -33,6 +34,7 @@ final class Hasher
             'relations' => $definition->relations(),
             'chunk' => $chunkOptions,
             'embedding' => [
+                'provider' => $embeddingProvider,
                 'model' => $embeddingModel,
                 'dimensions' => $embeddingDimensions,
             ],
