@@ -163,6 +163,63 @@ it('leaves an unchanged chunk embedding untouched on resync', function () {
     expect($chunk->embedding)->not->toBeNull();
 });
 
+it('invalidates every chunk embedding, even unchanged ones, when the embedding model changes', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
+
+    config(['eloquent-rag.embedding.model' => 'text-embedding-3-large']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($document->fresh()->chunks->pluck('embedding')->filter()->isEmpty())->toBeTrue();
+});
+
+it('invalidates every chunk embedding, even unchanged ones, when the embedding dimensions change', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
+
+    config(['eloquent-rag.embedding.dimensions' => 3072]);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($document->fresh()->chunks->pluck('embedding')->filter()->isEmpty())->toBeTrue();
+});
+
+it('invalidates every chunk embedding, even unchanged ones, when the embedding provider changes', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
+
+    config(['eloquent-rag.embedding.provider' => 'ollama']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($document->fresh()->chunks->pluck('embedding')->filter()->isEmpty())->toBeTrue();
+});
+
+it('marks the document pending again after an embedding configuration change invalidates its chunks', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
+    $document->update(['status' => 'synced']);
+
+    config(['eloquent-rag.embedding.model' => 'text-embedding-3-large']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($document->fresh()->status)->toBe('pending');
+});
+
 it('does not touch synced_at on a second sync() when nothing changed', function () {
     Carbon::setTestNow('2026-01-01 00:00:00');
 

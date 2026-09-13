@@ -100,6 +100,7 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
     $configA = Hasher::configuration(
         productDefinition(),
         ['max_tokens' => 400, 'overlap' => 40],
+        null,
         'text-embedding-3-small',
         1536,
     );
@@ -107,6 +108,7 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
     $configB = Hasher::configuration(
         productDefinition(),
         ['max_tokens' => 800, 'overlap' => 40],
+        null,
         'text-embedding-3-small',
         1536,
     );
@@ -115,10 +117,71 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
     expect($configA)->not->toBe($configB);
 });
 
+it('changes configuration_hash when only the embedding provider changes', function () {
+    $configA = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        'openai',
+        'text-embedding-3-small',
+        1536,
+    );
+
+    $configB = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        'ollama',
+        'text-embedding-3-small',
+        1536,
+    );
+
+    expect($configA)->not->toBe($configB);
+});
+
+it('changes configuration_hash when only the embedding model changes', function () {
+    $configA = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    $configB = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        null,
+        'text-embedding-3-large',
+        1536,
+    );
+
+    expect($configA)->not->toBe($configB);
+});
+
+it('changes configuration_hash when only the embedding dimensions change', function () {
+    $configA = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    $configB = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40],
+        null,
+        'text-embedding-3-small',
+        3072,
+    );
+
+    expect($configA)->not->toBe($configB);
+});
+
 it('produces the same configuration_hash regardless of associative key order in chunk options', function () {
     $configA = Hasher::configuration(
         productDefinition(),
         ['max_tokens' => 400, 'overlap' => 40],
+        null,
         'text-embedding-3-small',
         1536,
     );
@@ -126,6 +189,7 @@ it('produces the same configuration_hash regardless of associative key order in 
     $configB = Hasher::configuration(
         productDefinition(),
         ['overlap' => 40, 'max_tokens' => 400],
+        null,
         'text-embedding-3-small',
         1536,
     );

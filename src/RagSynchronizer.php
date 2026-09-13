@@ -67,6 +67,7 @@ final class RagSynchronizer
         $configurationHash = Hasher::configuration(
             $this->definition,
             $chunkOptions,
+            config('eloquent-rag.embedding.provider'),
             (string) config('eloquent-rag.embedding.model'),
             (int) config('eloquent-rag.embedding.dimensions'),
         );
@@ -81,7 +82,15 @@ final class RagSynchronizer
             return;
         }
 
-        DB::transaction(function () use ($existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash): void {
+        // A changed configuration_hash means the embedding provider, model,
+        // or dimensions changed (or the chunking rules did) — either way,
+        // every chunk's already-stored embedding was generated under the
+        // old configuration and is no longer valid, even for chunks whose
+        // content_hash hasn't changed. reconcileChunks() needs this to null
+        // out those otherwise-untouched embeddings too.
+        $configurationChanged = $existing !== null && $existing->configuration_hash !== $configurationHash;
+
+        DB::transaction(function () use ($existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash, $configurationChanged): void {
             $values = [
                 'content_hash' => $contentHash,
                 'configuration_hash' => $configurationHash,
@@ -106,7 +115,7 @@ final class RagSynchronizer
                 $values,
             );
 
-            $this->reconcileChunks($document, $rendered, $chunkOptions);
+            $this->reconcileChunks($document, $rendered, $chunkOptions, $configurationChanged);
             $this->reconcileDependencies($document);
         });
     }
@@ -205,7 +214,7 @@ final class RagSynchronizer
     /**
      * @param  array{max_tokens: int, overlap: int}  $chunkOptions
      */
-    private function reconcileChunks(RagDocument $document, string $rendered, array $chunkOptions): void
+    private function reconcileChunks(RagDocument $document, string $rendered, array $chunkOptions, bool $configurationChanged = false): void
     {
         $chunker = new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap']);
         $chunks = $chunker->chunk($rendered);
@@ -218,11 +227,13 @@ final class RagSynchronizer
 
             $values = ['content_hash' => $contentHash];
 
-            // A changed hash means the chunk text changed, so the
-            // previously generated embedding no longer matches it — null
-            // it out so embed() (which only fills chunks where
-            // embedding IS NULL) regenerates it.
-            if ($existingChunk !== null && $existingChunk->content_hash !== $contentHash) {
+            // Null the embedding whenever it no longer matches what would
+            // be generated now: either the chunk text itself changed, or
+            // the embedding provider/model/dimensions changed underneath
+            // an unchanged chunk (configurationChanged) — both leave a
+            // stale vector that embed() (which only fills chunks where
+            // embedding IS NULL) would otherwise never regenerate.
+            if ($existingChunk !== null && ($configurationChanged || $existingChunk->content_hash !== $contentHash)) {
                 $values['embedding'] = null;
             }
 

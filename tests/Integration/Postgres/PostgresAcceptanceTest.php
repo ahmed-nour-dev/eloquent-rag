@@ -70,6 +70,27 @@ it('round-trips a real embedding vector through the AsVector cast on a genuine v
     expect($reloaded->embedding)->toEqual($chunk->embedding);
 });
 
+it('regenerates chunk embeddings via embed() after an embedding model change invalidates them', function () {
+    $product = createSyncedPostgresProduct();
+    $product->rag()->embed();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    expect($chunk->embedding)->not->toBeNull();
+
+    config(['eloquent-rag.embedding.model' => 'text-embedding-3-large']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($chunk->fresh()->embedding)->toBeNull();
+
+    $product->rag()->embed();
+
+    expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    Embeddings::assertGenerated(fn ($prompt): bool => $prompt->model === 'text-embedding-3-large');
+});
+
 it('performs a real sync -> embed -> search cycle against the vector column without error', function () {
     $match = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
     $match->rag()->embed();
