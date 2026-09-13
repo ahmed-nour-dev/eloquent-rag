@@ -210,10 +210,25 @@ final class RagSynchronizer
         $chunker = new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap']);
         $chunks = $chunker->chunk($rendered);
 
+        $existingChunks = $document->chunks()->get()->keyBy('chunk_index');
+
         foreach ($chunks as $index => $chunkText) {
+            $contentHash = Hasher::content($chunkText);
+            $existingChunk = $existingChunks->get($index);
+
+            $values = ['content_hash' => $contentHash];
+
+            // A changed hash means the chunk text changed, so the
+            // previously generated embedding no longer matches it — null
+            // it out so embed() (which only fills chunks where
+            // embedding IS NULL) regenerates it.
+            if ($existingChunk !== null && $existingChunk->content_hash !== $contentHash) {
+                $values['embedding'] = null;
+            }
+
             $document->chunks()->updateOrCreate(
                 ['chunk_index' => $index],
-                ['content_hash' => Hasher::content($chunkText)],
+                $values,
             );
         }
 
