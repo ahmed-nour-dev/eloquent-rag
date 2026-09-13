@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Ahmednour\EloquentRag\Models\RagChunk;
+use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Brand;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Category;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Product;
@@ -124,6 +125,67 @@ it('performs a real sync -> embed -> search cycle against the vector column with
     expect($results)->not->toBeEmpty();
     expect($results->first())->toBeInstanceOf(Product::class);
     expect($results->pluck('id')->all())->toEqualCanonicalizing([$match->id, $other->id]);
+});
+
+it('ranks documents by their single best chunk, not by how many close chunks one document has', function () {
+    // Regression test for the bug fixed alongside this test: ranking used
+    // to be decided by over-fetching a fixed multiple of chunk-level rows
+    // and deduping down to documents, which could fill the entire
+    // over-fetch window with one document's near-duplicate chunks and
+    // silently drop a genuinely better-ranked second document. This uses
+    // exact, un-roundable vector geometry against the real
+    // vec_distance_cosine() function — identical vectors are always
+    // cosine distance 0, orthogonal vectors are always exactly 1, and
+    // opposite vectors are always exactly 2 — so the expected order below
+    // is not an approximation.
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $unitVector = fn (int $onIndex, float $value = 1.0): array => array_replace(
+        array_fill(0, $vectorDimensions, 0.0),
+        [$onIndex => $value],
+    );
+
+    $bestMatch = createSyncedMariaDbProduct('Best Match', 'DOC-A');
+    $secondBest = createSyncedMariaDbProduct('Second Best', 'DOC-B');
+    $worstMatch = createSyncedMariaDbProduct('Worst Match', 'DOC-C');
+
+    $documentIdFor = fn (Product $product): int => RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->value('id');
+
+    // Document A: 8 chunks identical to the query vector (distance 0
+    // each) — many near-duplicate top chunks belonging to one document.
+    foreach (range(0, 7) as $offset) {
+        RagChunk::create([
+            'document_id' => $documentIdFor($bestMatch),
+            'chunk_index' => 100 + $offset,
+            'content_hash' => str_repeat('a', 64),
+            'embedding' => $unitVector(0),
+        ]);
+    }
+
+    // Document B: a single chunk orthogonal to the query (distance 1) —
+    // the genuine second-best document.
+    RagChunk::create([
+        'document_id' => $documentIdFor($secondBest),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('b', 64),
+        'embedding' => $unitVector(1),
+    ]);
+
+    // Document C: a single chunk pointing the opposite way (distance 2).
+    RagChunk::create([
+        'document_id' => $documentIdFor($worstMatch),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('c', 64),
+        'embedding' => $unitVector(0, -1.0),
+    ]);
+
+    Embeddings::fake([[$unitVector(0)]]);
+
+    $results = Product::searchRag('anything', 2);
+
+    expect($results->pluck('id')->all())->toBe([$bestMatch->id, $secondBest->id]);
 });
 
 it('rag:doctor reads the real declared vector column dimension and matches config', function () {
