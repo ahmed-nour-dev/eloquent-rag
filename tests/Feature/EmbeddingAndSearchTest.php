@@ -94,6 +94,31 @@ it('rejects an out-of-range minSimilarity before checking backend support or gen
     'above 1.0' => [1.01],
 ]);
 
+it('rejects a non-positive limit before checking backend support or generating embeddings', function (int $limit) {
+    Embeddings::fake();
+
+    createSyncedProduct();
+
+    expect(fn () => Product::searchRag('a bluetooth speaker', limit: $limit))
+        ->toThrow(InvalidArgumentException::class);
+
+    Embeddings::assertNothingGenerated();
+})->with([
+    'zero' => [0],
+    'negative' => [-1],
+]);
+
+it('clamps an excessively large limit instead of rejecting it, still reaching the unsupported-backend rejection', function () {
+    Embeddings::fake();
+
+    createSyncedProduct();
+
+    expect(fn () => Product::searchRag('a bluetooth speaker', limit: 100000))
+        ->toThrow(UnsupportedVectorBackend::class);
+
+    Embeddings::assertNothingGenerated();
+});
+
 /**
  * Isolated, honest check of laravel/ai's real API shape using its official
  * fake — NOT routed through RagSynchronizer/RagSearch (which correctly

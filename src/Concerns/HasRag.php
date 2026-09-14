@@ -58,6 +58,9 @@ trait HasRag
      * instead; `Rag::search(static::class, ...)` is the equivalent
      * class-agnostic form.
      *
+     * @param  int  $limit  Must be at least 1; values above
+     *                      config('eloquent-rag.search.max_limit') are
+     *                      silently clamped — see RagSearch::search().
      * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0)
      *                                     a chunk must meet to be considered
      *                                     a match — see RagSearch::search().

@@ -139,6 +139,12 @@ build plan — isn't possible in PHP once `rag()` already exists as a real
 instance method (a class can't have one method be both instance and
 static), so `searchRag()` is the static entry point instead.
 
+`limit` must be at least 1 — `0` or a negative value throws an
+`InvalidArgumentException`. A `limit` above
+`config('eloquent-rag.search.max_limit')` (default `1000`) is silently
+clamped down to it rather than rejected, to guard against an accidentally
+expensive vector query.
+
 ### Filtering by relevance
 
 A nearest-neighbor match is not necessarily a *relevant* one — for a query

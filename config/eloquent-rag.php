@@ -73,6 +73,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    |
+    | `max_limit` caps the `limit` argument accepted by
+    | `Product::searchRag()` / `Rag::search()` — a caller-supplied limit
+    | above this is silently clamped down to it, protecting against
+    | accidentally expensive vector queries. A limit below 1 is rejected
+    | outright (InvalidArgumentException) rather than clamped, since there's
+    | no sane number of results to substitute for it.
+    */
+    'search' => [
+        'max_limit' => 1000,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Connection
     |--------------------------------------------------------------------------
     |

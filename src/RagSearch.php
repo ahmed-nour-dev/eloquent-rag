@@ -48,6 +48,11 @@ final class RagSearch
     }
 
     /**
+     * @param  int  $limit  Must be at least 1. Values above
+     *                      config('eloquent-rag.search.max_limit') are
+     *                      silently clamped down to it rather than
+     *                      rejected, to guard against accidentally
+     *                      expensive vector queries.
      * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0,
      *                                     where 1.0 is identical) a chunk
      *                                     must meet to be considered a
@@ -57,13 +62,20 @@ final class RagSearch
      *                                     how distant they are.
      *
      * @throws UnsupportedVectorBackend
-     * @throws InvalidArgumentException if $minSimilarity is outside [0.0, 1.0]
+     * @throws InvalidArgumentException if $limit is below 1, or if
+     *                                  $minSimilarity is outside [0.0, 1.0]
      */
     public function search(string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
+        if ($limit < 1) {
+            throw new InvalidArgumentException('$limit must be at least 1, got '.$limit.'.');
+        }
+
         if ($minSimilarity !== null && ($minSimilarity < 0.0 || $minSimilarity > 1.0)) {
             throw new InvalidArgumentException('$minSimilarity must be between 0.0 and 1.0, got '.$minSimilarity.'.');
         }
+
+        $limit = min($limit, (int) config('eloquent-rag.search.max_limit'));
 
         VectorBackendCapability::ensureSupported($this->connectionName);
 
