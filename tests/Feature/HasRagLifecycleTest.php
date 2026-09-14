@@ -109,6 +109,39 @@ it('resyncRag() reconciles exactly the changed feature dependency, leaving other
     expect($docB->fresh()->dependencies()->where('dependency_type', Feature::class)->count())->toBe(1);
 });
 
+it('reconciles dependencies incrementally: unchanged rows keep their id, only the stale/new ones change', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $waterproof = Feature::create(['name' => 'Waterproof']);
+    $bluetooth = Feature::create(['name' => 'Bluetooth']);
+
+    $product = createSpeaker($category, $brand);
+    $product->features()->attach([$waterproof->id, $bluetooth->id]);
+    $product->resyncRag();
+
+    $document = documentFor($product);
+
+    $categoryRowId = $document->dependencies()->where('dependency_type', Category::class)->value('id');
+    $brandRowId = $document->dependencies()->where('dependency_type', Brand::class)->value('id');
+    $waterproofRowId = $document->dependencies()->where('dependency_type', Feature::class)->where('dependency_id', $waterproof->id)->value('id');
+
+    // Swap one feature for another; category/brand stay exactly as they are.
+    $product->features()->detach($bluetooth->id);
+    $product->features()->attach([Feature::create(['name' => 'Solar'])->id => []]);
+    $product->resyncRag();
+
+    // The rows that were already correct keep their original ids — they
+    // were never deleted and recreated.
+    expect($document->dependencies()->where('dependency_type', Category::class)->value('id'))->toBe($categoryRowId);
+    expect($document->dependencies()->where('dependency_type', Brand::class)->value('id'))->toBe($brandRowId);
+    expect($document->dependencies()->where('dependency_type', Feature::class)->where('dependency_id', $waterproof->id)->value('id'))->toBe($waterproofRowId);
+
+    // The stale Bluetooth row is gone, and exactly the desired set remains.
+    expect($document->dependencies()->where('dependency_type', Feature::class)->pluck('dependency_id')->sort()->values()->all())
+        ->toBe([$waterproof->id, Feature::where('name', 'Solar')->value('id')]);
+    expect($document->dependencies()->count())->toBe(4);
+});
+
 it('cascades document, chunk, and dependency deletion when the model is deleted', function () {
     $category = Category::create(['name' => 'Electronics']);
     $brand = Brand::create(['name' => 'Acme']);

@@ -7,6 +7,7 @@ namespace Ahmednour\EloquentRag;
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
 use Ahmednour\EloquentRag\Jobs\SyncRagDocument;
 use Ahmednour\EloquentRag\Models\RagChunk;
+use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Support\Chunker;
 use Ahmednour\EloquentRag\Support\Hasher;
@@ -259,9 +260,13 @@ final class RagSynchronizer
     }
 
     /**
-     * Full reconciliation, not a delta patch — matches the Phase 0 spike's
-     * validated approach (item 8): delete this document's current
-     * dependency rows and re-derive the desired set from scratch.
+     * Delta reconciliation: derive the desired dependency set, diff it
+     * against the rows already on the document, delete only the rows that
+     * are no longer desired, and insert only the ones that are new. Rows
+     * present in both sets are left untouched (no id/timestamp churn) —
+     * this is what keeps a resync of a document with a large, largely
+     * unchanged dependency graph cheap instead of always paying for
+     * N deletes + N inserts.
      */
     private function reconcileDependencies(RagDocument $document): void
     {
@@ -281,13 +286,27 @@ final class RagSynchronizer
             }
         }
 
-        $dependencies = $dependencies->unique(
-            fn (array $dependency): string => $dependency['dependency_type'].':'.$dependency['dependency_id']
+        $key = fn (string $type, int|string $id): string => $type.':'.$id;
+
+        $desired = $dependencies->keyBy(
+            fn (array $dependency) => $key($dependency['dependency_type'], $dependency['dependency_id'])
         );
 
-        $document->dependencies()->delete();
+        // ->toBase() drops down to a plain Support Collection: Eloquent
+        // Collection overrides except()/only() to filter by the model's
+        // primary key rather than the keyBy() key, which would silently
+        // break the diff below.
+        $existing = $document->dependencies()->get()->keyBy(
+            fn (RagDependency $dependency) => $key($dependency->dependency_type, $dependency->dependency_id)
+        )->toBase();
 
-        foreach ($dependencies as $dependency) {
+        $staleIds = $existing->except($desired->keys()->all())->pluck('id');
+
+        if ($staleIds->isNotEmpty()) {
+            $document->dependencies()->whereIn('id', $staleIds)->delete();
+        }
+
+        foreach ($desired->except($existing->keys()->all()) as $dependency) {
             $document->dependencies()->create($dependency);
         }
     }

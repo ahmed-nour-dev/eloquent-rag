@@ -25,18 +25,32 @@ silently changing what this package tracks.
 On every `sync()`, the package resolves each declared relation path down
 to the **related model instance(s)** it denotes (not the leaf attribute —
 `category.name` depends on the `Category` row, not on its `name` column
-specifically) and fully reconciles the `rag_dependencies` table for that
-document: existing rows for the document are deleted and the current,
-correct set is re-inserted. This is a full reconciliation on every sync,
-not an incremental patch — deliberately, since it's what makes attach/detach
-handling correct (see below) without extra bookkeeping.
+specifically) and reconciles the `rag_dependencies` table for that document
+against that desired set: rows no longer in it are deleted, rows missing
+from it are inserted, and rows already correct are left untouched. The
+*result* is a full reconciliation — the table always ends up exactly
+matching the current declared relations, which is what makes attach/detach
+handling correct (see below) without extra bookkeeping — but unlike a
+delete-all-then-reinsert-all pass, a document whose dependency graph hasn't
+actually changed pays for neither a delete nor an insert on that resync,
+and rows that do carry over keep their `id` and `created_at`.
 
 ```
 rag_dependencies
   document_id, dependency_type, dependency_id
   index (dependency_type, dependency_id)   <- the reverse-lookup hot path
   index (document_id)
+  unique (document_id, dependency_type, dependency_id)
 ```
+
+The unique constraint exists because the diff above is keyed on that triple:
+without it, two overlapping `sync()` calls for the same document could each
+insert the same dependency, and — since the delta reconciliation only ever
+deletes rows it can positively identify as stale, not "whatever's left over
+after dedup" — a duplicate like that would never get cleaned up on a later
+sync the way it would have under the old delete-all-then-reinsert pass. The
+constraint turns that race into a `QueryException` on the losing insert
+instead of a silently accumulating duplicate row.
 
 A `belongsToMany` relation (`->relation('features.name')`) produces one
 dependency row per related model in the collection — a product with three
