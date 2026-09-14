@@ -212,7 +212,19 @@ final class RagSynchronizer
                 );
 
             foreach ($pendingChunks->values() as $index => $chunk) {
-                $chunk->update(['embedding' => $response->embeddings[$index]]);
+                // A concurrent sync() can reconcile this exact chunk between
+                // the read above and this write, changing its content_hash
+                // and re-nulling its embedding (reconcileChunks()). Gate the
+                // write on the content_hash still matching what $inputs was
+                // actually built from — otherwise this would pair a fresh
+                // content_hash with an embedding computed from stale text,
+                // and whereNull('embedding') would never catch it again.
+                // Dropping the write leaves the row NULL for the next
+                // embed() call to pick up correctly.
+                $document->chunks()
+                    ->where('id', $chunk->id)
+                    ->where('content_hash', $chunk->content_hash)
+                    ->update(['embedding' => $response->embeddings[$index]]);
             }
         }
 
