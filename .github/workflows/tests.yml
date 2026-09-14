@@ -73,6 +73,15 @@ jobs:
       - name: Run tests
         run: vendor/bin/pest
 
+      - name: Guard against the MariaDB acceptance suite silently skipping
+        # A normal `pest` run reports success even if RAG_TEST_MARIADB_HOST
+        # wiring breaks and every test in this directory falls through its
+        # markTestSkipped() guard (see MariaDbAcceptanceTestCase) — this is
+        # exactly how #1/#3 went unnoticed until someone read the run's test
+        # count by hand. Re-running just this directory with
+        # --fail-on-skipped turns that silent skip into a hard CI failure.
+        run: vendor/bin/pest tests/Integration/MariaDb --fail-on-skipped
+
       - name: Pint
         run: vendor/bin/pint --test
 
@@ -133,6 +142,13 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/pest
+
+      - name: Guard against the pgvector acceptance suite silently skipping
+        # Same guard as the mariadb job's — see that step's comment. Without
+        # this, a broken RAG_TEST_PGSQL_HOST wiring makes every test in this
+        # directory skip via PostgresAcceptanceTestCase's guard and CI still
+        # goes green.
+        run: vendor/bin/pest tests/Integration/Postgres --fail-on-skipped
 
       - name: Pint
         run: vendor/bin/pint --test
