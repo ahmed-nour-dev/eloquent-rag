@@ -214,17 +214,20 @@ final class RagSynchronizer
             foreach ($pendingChunks->values() as $index => $chunk) {
                 // A concurrent sync() can reconcile this exact chunk between
                 // the read above and this write, changing its content_hash
-                // and re-nulling its embedding (reconcileChunks()). Gate the
-                // write on the content_hash still matching what $inputs was
-                // actually built from — otherwise this would pair a fresh
-                // content_hash with an embedding computed from stale text,
-                // and whereNull('embedding') would never catch it again.
-                // Dropping the write leaves the row NULL for the next
-                // embed() call to pick up correctly.
+                // and re-nulling its embedding (reconcileChunks()). Re-fetch
+                // gated on the content_hash $inputs was actually built from:
+                // if it no longer matches, the row has moved on and writing
+                // this embedding would pair a fresh content_hash with a
+                // vector computed from stale text — something
+                // whereNull('embedding') would never catch again. Update
+                // through the fetched *model* rather than a query-builder
+                // mass update so AsVector's cast still applies; a plain
+                // array write bypasses it and MariaDB rejects the value.
                 $document->chunks()
                     ->where('id', $chunk->id)
                     ->where('content_hash', $chunk->content_hash)
-                    ->update(['embedding' => $response->embeddings[$index]]);
+                    ->first()
+                    ?->update(['embedding' => $response->embeddings[$index]]);
             }
         }
 
