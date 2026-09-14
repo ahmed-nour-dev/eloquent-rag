@@ -11,8 +11,9 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
  * Wires a model into the RAG sync lifecycle: created/updated/restored queue
- * a re-sync (after commit), deleted forgets the document (chunks and
- * dependencies cascade via FK). See ADR-0006 for the transaction/queue
+ * a re-sync, deleted queues forgetting the document (chunks and
+ * dependencies cascade via FK) — all of it deferred until after the
+ * enclosing transaction commits. See ADR-0006 for the transaction/queue
  * boundary this relies on.
  */
 trait HasRag
@@ -70,7 +71,7 @@ trait HasRag
     {
         static::created(fn (self $model) => $model->rag()->queue());
         static::updated(fn (self $model) => $model->rag()->queue());
-        static::deleted(fn (self $model) => $model->rag()->forget());
+        static::deleted(fn (self $model) => $model->rag()->queueForget());
 
         // `restored` has no dedicated static convenience method on the base
         // Model — only SoftDeletes defines one — so it's registered via the

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag;
 
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
+use Ahmednour\EloquentRag\Jobs\ForgetRagDocument;
 use Ahmednour\EloquentRag\Jobs\SyncRagDocument;
 use Ahmednour\EloquentRag\Models\RagChunk;
 use Ahmednour\EloquentRag\Models\RagDependency;
@@ -150,6 +151,21 @@ final class RagSynchronizer
     public function forget(): void
     {
         $this->findDocument()?->delete();
+    }
+
+    /**
+     * Dispatches the document deletion after the enclosing transaction
+     * commits (ADR-0006) — the same protection queue() gives create/update
+     * /restore. Deleting the document directly from the `deleted` event,
+     * synchronously and inside whatever transaction the caller's delete()
+     * happens to be wrapped in, would leave the RAG document gone even if
+     * that transaction later rolls back and the model row comes back.
+     */
+    public function queueForget(): void
+    {
+        ForgetRagDocument::dispatch([
+            ['model_type' => $this->model::class, 'model_id' => $this->model->getKey()],
+        ])->afterCommit();
     }
 
     /**
