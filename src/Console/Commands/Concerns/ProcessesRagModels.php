@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag\Console\Commands\Concerns;
 
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -23,12 +24,12 @@ trait ProcessesRagModels
     /**
      * @return array{synced: int, failed: int}
      */
-    protected function processModels(?string $modelClass, int|string|null $id, bool $force): array
+    protected function processModels(?string $modelClass, int|string|null $id, bool $force, ?string $connection = null): array
     {
         $synced = 0;
         $failed = 0;
 
-        $modelClasses = $modelClass !== null ? [$modelClass] : $this->distinctModelTypes();
+        $modelClasses = $modelClass !== null ? [$modelClass] : $this->distinctModelTypes($connection);
 
         if ($modelClasses === []) {
             $this->warn('No model types found in rag_documents yet — nothing to target. Run this against a specific model class at least once first.');
@@ -95,7 +96,7 @@ trait ProcessesRagModels
      */
     private function recordFailure(Model $model, Throwable $e): void
     {
-        DB::table('rag_documents')
+        DB::connection(RagConnectionResolver::resolve($model))->table('rag_documents')
             ->where('model_type', $model::class)
             ->where('model_id', $model->getKey())
             ->update(['status' => 'failed', 'last_error' => $e->getMessage()]);
@@ -104,8 +105,8 @@ trait ProcessesRagModels
     /**
      * @return list<string>
      */
-    private function distinctModelTypes(): array
+    private function distinctModelTypes(?string $connection): array
     {
-        return DB::table('rag_documents')->distinct()->pluck('model_type')->all();
+        return DB::connection($connection)->table('rag_documents')->distinct()->pluck('model_type')->all();
     }
 }

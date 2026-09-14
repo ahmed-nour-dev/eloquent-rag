@@ -70,4 +70,19 @@ return [
     'invalidation' => [
         'debounce_seconds' => 5,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Connection
+    |--------------------------------------------------------------------------
+    |
+    | Which database connection rag_documents/rag_chunks/rag_dependencies
+    | live on. Null (the default) mirrors each indexed model's own
+    | connection automatically — if a model declares
+    | `protected $connection = 'tenant';`, its RAG data is stored on the
+    | 'tenant' connection too. Set this to a specific connection name to
+    | force ALL RAG data onto one connection regardless of indexed models'
+    | own connections. See docs/installation.md#custom-database-connections.
+    */
+    'connection' => null,
 ];

@@ -63,6 +63,73 @@ setup, and general health signals, and exits non-zero if anything would
 otherwise fail obscurely later — see [backend-support.md](backend-support.md#rag-doctor)
 for exactly what it checks and why.
 
+## Custom database connections
+
+If an indexed model declares its own connection:
+
+```php
+class Product extends Model
+{
+    protected $connection = 'tenant';
+}
+```
+
+its `rag_documents`/`rag_chunks`/`rag_dependencies` rows are stored and
+queried on that same `'tenant'` connection automatically — no
+configuration needed. This corrects a prior bug rather than adding an
+opt-in feature: earlier versions silently wrote and read this data on the
+default connection regardless of a model's own connection.
+
+Resolution is by connection *name*, not a snapshotted connection instance,
+so this works transparently with multi-tenancy packages (e.g.
+stancl/tenancy) that keep the connection name fixed while swapping what
+physical database it points to per request/job.
+
+Run migrations on each connection that needs these tables the normal
+Laravel way:
+
+```bash
+php artisan migrate --database=tenant
+```
+
+(or your tenancy package's own per-connection migration command).
+
+### Centralizing on one connection instead
+
+To force **all** RAG data onto a single connection regardless of what
+connection each indexed model itself uses, set `connection` in
+`config/eloquent-rag.php`:
+
+```php
+'connection' => 'central',
+```
+
+### Dependency invalidation
+
+A dependency (a related model declared via `->relation()` in a
+`RagDefinition`) is assumed to live on the same connection as the
+documents that reference it — e.g. a tenant's `Product` depending on that
+same tenant's `Category`. Cross-connection dependency graphs are not
+supported.
+
+### `rag:status`, `rag:prune`, `rag:doctor`, `rag:sync`, `rag:rebuild`
+
+These commands operate on one connection per invocation. When no model
+class is given (bulk mode), pass `--connection=` to target a connection
+other than the default:
+
+```bash
+php artisan rag:status --connection=tenant
+php artisan rag:doctor --connection=tenant
+php artisan rag:prune --connection=tenant
+php artisan rag:sync --connection=tenant
+```
+
+For a multi-connection setup, run the command once per connection.
+`rag:sync`/`rag:rebuild` with an explicit model argument, and
+`rag:forget`/`rag:dependencies` (which always require one), ignore
+`--connection` — the given model's own connection is used instead.
+
 ## Next
 
 - [definition-api.md](definition-api.md) — declare your first model

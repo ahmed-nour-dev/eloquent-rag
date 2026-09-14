@@ -16,7 +16,8 @@ class RagSyncCommand extends Command
         {model? : Fully-qualified model class to sync}
         {--id= : Sync only this specific model id (requires model)}
         {--dependency= : Invalidate a dependency instead, format Type:id (e.g. "App\\Models\\Category:5") — mutually exclusive with model/--id}
-        {--chunk= : Override eloquent-rag.queue.batch_size for this invocation only}';
+        {--chunk= : Override eloquent-rag.queue.batch_size for this invocation only}
+        {--connection= : Connection to discover rag_documents model types from when no model argument is given (default: the app\'s default connection). Ignored when a model argument is given — its own connection is used instead.}';
 
     protected $description = 'Sync (structurally, then embed) one model, every instance of a model type, or invalidate a dependency directly';
 
@@ -47,7 +48,7 @@ class RagSyncCommand extends Command
             return $this->invalidateDependency($dependency);
         }
 
-        $result = $this->processModels($model, $id, force: false);
+        $result = $this->processModels($model, $id, force: false, connection: $this->option('connection'));
 
         $this->newLine();
         $this->info("Synced: {$result['synced']}, Failed: {$result['failed']}");

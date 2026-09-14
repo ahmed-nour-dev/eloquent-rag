@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag;
 
 use Ahmednour\EloquentRag\Jobs\SyncRagDocument;
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,14 @@ final class DependencyInvalidator
             return;
         }
 
+        // A dependency and the documents that reference it are assumed to
+        // live on the same connection (true for the realistic case — a
+        // tenant's Product depending on that same tenant's Category), so
+        // the changed model's own connection is what's used to look up
+        // rag_dependencies/rag_documents below. Cross-connection dependency
+        // graphs are not supported — see docs/installation.md#custom-database-connections.
+        $connectionName = RagConnectionResolver::resolve($dependencyType);
+
         // Cheap existence check before touching the debounce lock at all.
         // The overwhelming majority of saves application-wide are not a
         // declared dependency of anything (including a model's own first
@@ -34,7 +43,7 @@ final class DependencyInvalidator
         // id with zero current dependents consumed the debounce window
         // anyway, it would block a *later, real* invalidation for the
         // rest of that window for no reason.
-        $idsWithDependents = $this->idsWithDependents($dependencyType, $ids);
+        $idsWithDependents = $this->idsWithDependents($connectionName, $dependencyType, $ids);
 
         if ($idsWithDependents === []) {
             return;
@@ -46,7 +55,7 @@ final class DependencyInvalidator
             return;
         }
 
-        $pairs = $this->resolveAffectedPairs($dependencyType, $lockedIds);
+        $pairs = $this->resolveAffectedPairs($connectionName, $dependencyType, $lockedIds);
 
         if ($pairs === []) {
             return;
@@ -83,9 +92,9 @@ final class DependencyInvalidator
      * @param  list<int|string>  $ids
      * @return list<int|string>
      */
-    private function idsWithDependents(string $dependencyType, array $ids): array
+    private function idsWithDependents(?string $connectionName, string $dependencyType, array $ids): array
     {
-        return DB::table('rag_dependencies')
+        return DB::connection($connectionName)->table('rag_dependencies')
             ->where('dependency_type', $dependencyType)
             ->whereIn('dependency_id', $ids)
             ->distinct()
@@ -97,9 +106,9 @@ final class DependencyInvalidator
      * @param  list<int|string>  $ids
      * @return list<array{model_type: string, model_id: int|string}>
      */
-    private function resolveAffectedPairs(string $dependencyType, array $ids): array
+    private function resolveAffectedPairs(?string $connectionName, string $dependencyType, array $ids): array
     {
-        return DB::table('rag_dependencies')
+        return DB::connection($connectionName)->table('rag_dependencies')
             ->join('rag_documents', 'rag_documents.id', '=', 'rag_dependencies.document_id')
             ->where('rag_dependencies.dependency_type', $dependencyType)
             ->whereIn('rag_dependencies.dependency_id', $ids)
