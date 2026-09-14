@@ -25,11 +25,15 @@ silently changing what this package tracks.
 On every `sync()`, the package resolves each declared relation path down
 to the **related model instance(s)** it denotes (not the leaf attribute —
 `category.name` depends on the `Category` row, not on its `name` column
-specifically) and fully reconciles the `rag_dependencies` table for that
-document: existing rows for the document are deleted and the current,
-correct set is re-inserted. This is a full reconciliation on every sync,
-not an incremental patch — deliberately, since it's what makes attach/detach
-handling correct (see below) without extra bookkeeping.
+specifically) and reconciles the `rag_dependencies` table for that document
+against that desired set: rows no longer in it are deleted, rows missing
+from it are inserted, and rows already correct are left untouched. The
+*result* is a full reconciliation — the table always ends up exactly
+matching the current declared relations, which is what makes attach/detach
+handling correct (see below) without extra bookkeeping — but unlike a
+delete-all-then-reinsert-all pass, a document whose dependency graph hasn't
+actually changed pays for neither a delete nor an insert on that resync,
+and rows that do carry over keep their `id` and `created_at`.
 
 ```
 rag_dependencies
