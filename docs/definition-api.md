@@ -39,6 +39,32 @@ There is deliberately no automatic discovery of what to render or depend
 on. If it isn't declared, it isn't tracked — see
 [ADR-0002](adr/0002-declarative-dependency-registry.md).
 
+## Preserving order
+
+Canonicalization sorts array-valued content attributes and relation paths
+before rendering, so that things like a `belongsToMany` collection (which
+has no guaranteed retrieval order) don't cause spurious `content_hash`
+changes across syncs. Not every array is an unordered collection, though —
+a numbered list of steps has a meaning encoded in its order:
+
+```php
+public function steps(): HasMany { return $this->hasMany(Step::class)->orderBy('position'); }
+
+public function toRagDefinition(): RagDefinition
+{
+    return Rag::make()
+        ->content(['name'])
+        ->relation('steps.label')
+        ->ordered('steps.label');
+}
+```
+
+`->ordered(...$paths)` marks already-declared content attributes or
+relation paths (by the same string passed to `content()`/`relation()`) as
+order-preserving: canonicalization renders their values in the order
+they're resolved in, rather than sorting them. It has no effect on paths
+that resolve to a scalar.
+
 Every segment of a `->relation()` path except the last must name a real
 Eloquent relationship method (`category` and `brand` above, for instance)
 — `sync()` validates this and throws `InvalidRelationPath` immediately on

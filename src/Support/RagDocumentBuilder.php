@@ -26,11 +26,11 @@ final class RagDocumentBuilder
         $lines = [];
 
         foreach ($definition->contentAttributes() as $attribute) {
-            $lines[] = sprintf('%s: %s', $attribute, $this->canonicalize($this->resolve($model, $attribute)));
+            $lines[] = sprintf('%s: %s', $attribute, $this->canonicalize($this->resolve($model, $attribute), $definition->isOrdered($attribute)));
         }
 
         foreach ($definition->relations() as $path) {
-            $lines[] = sprintf('%s: %s', $path, $this->canonicalize($this->resolve($model, $path)));
+            $lines[] = sprintf('%s: %s', $path, $this->canonicalize($this->resolve($model, $path), $definition->isOrdered($path)));
         }
 
         return implode("\n", $lines);
@@ -75,14 +75,16 @@ final class RagDocumentBuilder
      *
      * - Collections from belongsToMany relations have no guaranteed
      *   retrieval order, so array/collection values are sorted before
-     *   joining.
+     *   joining — unless the path was declared via RagDefinition::ordered(),
+     *   in which case the resolved order is semantically meaningful (e.g.
+     *   numbered steps) and is preserved as-is.
      * - Floats are formatted with a fixed precision rather than relying on
      *   PHP's `serialize_precision` ini setting or (string) casting, which
      *   is environment-dependent.
      * - Dates are normalized to UTC ISO-8601 rather than the model's
      *   ambient timezone, which can vary by app config.
      */
-    private function canonicalize(mixed $value): string
+    private function canonicalize(mixed $value, bool $ordered = false): string
     {
         if ($value === null) {
             return '';
@@ -102,7 +104,10 @@ final class RagDocumentBuilder
 
         if (is_array($value)) {
             $parts = array_map(fn (mixed $item): string => $this->canonicalize($item), $value);
-            sort($parts, SORT_STRING);
+
+            if (! $ordered) {
+                sort($parts, SORT_STRING);
+            }
 
             return implode(', ', $parts);
         }
