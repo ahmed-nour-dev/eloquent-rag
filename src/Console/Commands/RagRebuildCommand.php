@@ -21,7 +21,8 @@ class RagRebuildCommand extends Command
 
     protected $signature = 'rag:rebuild
         {model? : Fully-qualified model class to rebuild}
-        {--id= : Rebuild only this specific model id (requires model)}';
+        {--id= : Rebuild only this specific model id (requires model)}
+        {--connection= : Connection to discover rag_documents model types from when no model argument is given (default: the app\'s default connection). Ignored when a model argument is given — its own connection is used instead.}';
 
     protected $description = 'Force re-sync and re-embed one model, or every instance of a model type, bypassing the staleness short-circuit';
 
@@ -36,7 +37,7 @@ class RagRebuildCommand extends Command
             return self::FAILURE;
         }
 
-        $result = $this->processModels($model, $id, force: true);
+        $result = $this->processModels($model, $id, force: true, connection: $this->option('connection'));
 
         $this->newLine();
         $this->info("Rebuilt: {$result['synced']}, Failed: {$result['failed']}");

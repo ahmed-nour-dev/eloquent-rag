@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag\Jobs;
 
 use Ahmednour\EloquentRag\Models\RagDocument;
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,7 +34,10 @@ final class ForgetRagDocument implements ShouldQueue
     public function handle(): void
     {
         foreach ($this->pairs as $pair) {
-            RagDocument::query()
+            // The source model is already gone, so there's no instance to
+            // resolve a connection from — RagConnectionResolver accepts the
+            // model_type class string directly instead.
+            RagDocument::on(RagConnectionResolver::resolve($pair['model_type']))
                 ->where('model_type', $pair['model_type'])
                 ->where('model_id', $pair['model_id'])
                 ->first()

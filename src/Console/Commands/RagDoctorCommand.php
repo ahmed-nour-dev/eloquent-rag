@@ -23,12 +23,17 @@ use Illuminate\Support\Facades\Schema;
  */
 class RagDoctorCommand extends Command
 {
-    protected $signature = 'rag:doctor';
+    protected $signature = 'rag:doctor
+        {--connection= : Database connection to check (default: the app\'s default connection)}';
 
     protected $description = 'Check this application\'s configuration for known Eloquent RAG problems before they surface mid-queue';
 
+    private ?string $connection = null;
+
     public function handle(): int
     {
+        $this->connection = $this->option('connection');
+
         $hasFailure = false;
 
         if (! $this->checkLaravelVersion()) {
@@ -88,7 +93,7 @@ class RagDoctorCommand extends Command
     private function checkVectorBackend(): bool
     {
         try {
-            VectorBackendCapability::ensureSupported();
+            VectorBackendCapability::ensureSupported($this->connection);
         } catch (UnsupportedVectorBackend $e) {
             $this->error("[FAIL] {$e->getMessage()}");
 
@@ -131,7 +136,7 @@ class RagDoctorCommand extends Command
      */
     private function actualEmbeddingColumnDimensions(): ?int
     {
-        $connection = DB::connection();
+        $connection = DB::connection($this->connection);
         $driver = $connection->getDriverName();
 
         $typeDescription = match ($driver) {
@@ -164,7 +169,7 @@ class RagDoctorCommand extends Command
      */
     private function checkVectorIndex(): void
     {
-        match (DB::connection()->getDriverName()) {
+        match (DB::connection($this->connection)->getDriverName()) {
             'pgsql' => $this->checkPostgresVectorIndex(),
             'mysql', 'mariadb' => $this->warn(
                 '[WARN] No vector index on rag_chunks.embedding: MariaDB requires the indexed column to be NOT NULL, '.
@@ -177,7 +182,7 @@ class RagDoctorCommand extends Command
 
     private function checkPostgresVectorIndex(): void
     {
-        $index = DB::connection()->selectOne(
+        $index = DB::connection($this->connection)->selectOne(
             'select indexdef from pg_indexes where tablename = ? and indexname = ?',
             ['rag_chunks', 'rag_chunks_embedding_vector_index'],
         );
@@ -204,8 +209,8 @@ class RagDoctorCommand extends Command
 
     private function checkOrphanedDependencies(): void
     {
-        $count = DB::table('rag_dependencies')
-            ->whereNotIn('document_id', DB::table('rag_documents')->select('id'))
+        $count = DB::connection($this->connection)->table('rag_dependencies')
+            ->whereNotIn('document_id', DB::connection($this->connection)->table('rag_documents')->select('id'))
             ->count();
 
         if ($count > 0) {
@@ -219,7 +224,7 @@ class RagDoctorCommand extends Command
 
     private function checkFailedDocuments(): void
     {
-        $failed = DB::table('rag_documents')->where('status', 'failed');
+        $failed = DB::connection($this->connection)->table('rag_documents')->where('status', 'failed');
         $count = $failed->count();
 
         if ($count === 0) {
@@ -235,6 +240,11 @@ class RagDoctorCommand extends Command
         }
     }
 
+    /**
+     * Deliberately ignores --connection: failed_jobs lives on the queue
+     * connection, not the RAG data connection this command otherwise
+     * checks, and the two are unrelated.
+     */
     private function checkFailedJobs(): void
     {
         if (! Schema::hasTable('failed_jobs')) {

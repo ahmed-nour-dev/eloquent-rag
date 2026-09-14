@@ -13,15 +13,18 @@ use Illuminate\Support\Facades\DB;
  */
 class RagStatusCommand extends Command
 {
-    protected $signature = 'rag:status';
+    protected $signature = 'rag:status
+        {--connection= : Database connection to report on (default: the app\'s default connection)}';
 
     protected $description = 'Report document/chunk/dependency counts, by status and model type';
 
     public function handle(): int
     {
-        $totalDocuments = DB::table('rag_documents')->count();
-        $totalChunks = DB::table('rag_chunks')->count();
-        $totalDependencies = DB::table('rag_dependencies')->count();
+        $connection = $this->option('connection');
+
+        $totalDocuments = DB::connection($connection)->table('rag_documents')->count();
+        $totalChunks = DB::connection($connection)->table('rag_chunks')->count();
+        $totalDependencies = DB::connection($connection)->table('rag_dependencies')->count();
 
         $this->info("Documents: {$totalDocuments}");
         $this->info("Chunks: {$totalChunks}");
@@ -35,7 +38,7 @@ class RagStatusCommand extends Command
         $this->line('By status:');
         $this->table(
             ['status', 'count'],
-            DB::table('rag_documents')
+            DB::connection($connection)->table('rag_documents')
                 ->select('status', DB::raw('count(*) as count'))
                 ->groupBy('status')
                 ->orderByDesc('count')
@@ -48,7 +51,7 @@ class RagStatusCommand extends Command
         $this->line('By model type:');
         $this->table(
             ['model_type', 'count'],
-            DB::table('rag_documents')
+            DB::connection($connection)->table('rag_documents')
                 ->select('model_type', DB::raw('count(*) as count'))
                 ->groupBy('model_type')
                 ->orderByDesc('count')

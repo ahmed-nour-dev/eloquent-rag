@@ -12,6 +12,7 @@ use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Support\Chunker;
 use Ahmednour\EloquentRag\Support\Hasher;
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Ahmednour\EloquentRag\Support\RagDocumentBuilder;
 use Ahmednour\EloquentRag\Support\RelationPathValidator;
 use Ahmednour\EloquentRag\Support\TokenizerFactory;
@@ -102,7 +103,9 @@ final class RagSynchronizer
         // out those otherwise-untouched embeddings too.
         $configurationChanged = $existing !== null && $existing->configuration_hash !== $configurationHash;
 
-        DB::transaction(function () use ($existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash, $configurationChanged): void {
+        $connectionName = $this->connectionName();
+
+        DB::connection($connectionName)->transaction(function () use ($connectionName, $existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash, $configurationChanged): void {
             $values = [
                 'content_hash' => $contentHash,
                 'configuration_hash' => $configurationHash,
@@ -119,7 +122,7 @@ final class RagSynchronizer
                 $values['version'] = $existing->version + 1;
             }
 
-            $document = RagDocument::query()->updateOrCreate(
+            $document = RagDocument::on($connectionName)->updateOrCreate(
                 [
                     'model_type' => $this->model::class,
                     'model_id' => $this->model->getKey(),
@@ -184,7 +187,7 @@ final class RagSynchronizer
      */
     public function embed(): void
     {
-        VectorBackendCapability::ensureSupported();
+        VectorBackendCapability::ensureSupported($this->connectionName());
 
         $document = $this->findDocument();
 
@@ -238,10 +241,15 @@ final class RagSynchronizer
 
     private function findDocument(): ?RagDocument
     {
-        return RagDocument::query()
+        return RagDocument::on($this->connectionName())
             ->where('model_type', $this->model::class)
             ->where('model_id', $this->model->getKey())
             ->first();
+    }
+
+    private function connectionName(): ?string
+    {
+        return RagConnectionResolver::resolve($this->model);
     }
 
     /** @return array{max_tokens: int, overlap: int, tokenizer: string} */

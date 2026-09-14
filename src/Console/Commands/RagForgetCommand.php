@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag\Console\Commands;
 
 use Ahmednour\EloquentRag\Models\RagDocument;
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Illuminate\Console\Command;
 
 /**
@@ -32,7 +33,7 @@ class RagForgetCommand extends Command
             return self::FAILURE;
         }
 
-        $document = RagDocument::query()
+        $document = RagDocument::on(RagConnectionResolver::resolve($model))
             ->where('model_type', $model)
             ->where('model_id', $id)
             ->first();

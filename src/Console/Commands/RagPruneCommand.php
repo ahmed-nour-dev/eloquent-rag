@@ -16,13 +16,15 @@ use Illuminate\Support\Facades\DB;
  */
 class RagPruneCommand extends Command
 {
-    protected $signature = 'rag:prune';
+    protected $signature = 'rag:prune
+        {--connection= : Database connection to prune rag_documents on (default: the app\'s default connection)}';
 
     protected $description = 'Delete rag_documents (and cascading chunks/dependencies) whose underlying model row no longer exists';
 
     public function handle(): int
     {
-        $modelTypes = DB::table('rag_documents')->distinct()->pluck('model_type');
+        $connection = $this->option('connection');
+        $modelTypes = DB::connection($connection)->table('rag_documents')->distinct()->pluck('model_type');
         $prunedTotal = 0;
 
         foreach ($modelTypes as $modelType) {
@@ -32,7 +34,7 @@ class RagPruneCommand extends Command
                 continue;
             }
 
-            $prunedTotal += $this->pruneModelType($modelType);
+            $prunedTotal += $this->pruneModelType($modelType, $connection);
         }
 
         $this->info("Pruned: {$prunedTotal} orphaned document(s).");
@@ -40,7 +42,7 @@ class RagPruneCommand extends Command
         return self::SUCCESS;
     }
 
-    private function pruneModelType(string $modelType): int
+    private function pruneModelType(string $modelType, ?string $connection): int
     {
         $keyName = (new $modelType)->getKeyName();
         $pruned = 0;
@@ -50,10 +52,10 @@ class RagPruneCommand extends Command
         // chunk() would skip rows as earlier deletions shift later
         // offsets. chunkById re-queries "id > last seen id" each time,
         // which stays correct regardless of what's deleted behind it.
-        DB::table('rag_documents')
+        DB::connection($connection)->table('rag_documents')
             ->where('model_type', $modelType)
             ->orderBy('id')
-            ->chunkById(500, function ($rows) use ($modelType, $keyName, &$pruned): void {
+            ->chunkById(500, function ($rows) use ($modelType, $keyName, $connection, &$pruned): void {
                 $ids = $rows->pluck('model_id')->all();
 
                 $existingIds = $modelType::query()->whereIn($keyName, $ids)->pluck($keyName)->all();
@@ -68,7 +70,7 @@ class RagPruneCommand extends Command
                     ->pluck('id')
                     ->all();
 
-                DB::table('rag_documents')->whereIn('id', $documentIdsToDelete)->delete();
+                DB::connection($connection)->table('rag_documents')->whereIn('id', $documentIdsToDelete)->delete();
 
                 $pruned += count($documentIdsToDelete);
             });

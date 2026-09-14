@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag;
 
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
+use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Closure;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder;
@@ -28,7 +29,12 @@ final class RagSearch
 {
     private ?Closure $scope = null;
 
-    public function __construct(private readonly string $modelClass) {}
+    private readonly ?string $connectionName;
+
+    public function __construct(private readonly string $modelClass)
+    {
+        $this->connectionName = RagConnectionResolver::resolve($this->modelClass);
+    }
 
     /**
      * Applies an arbitrary filter to the underlying rag_chunks/rag_documents
@@ -59,7 +65,7 @@ final class RagSearch
             throw new InvalidArgumentException('$minSimilarity must be between 0.0 and 1.0, got '.$minSimilarity.'.');
         }
 
-        VectorBackendCapability::ensureSupported();
+        VectorBackendCapability::ensureSupported($this->connectionName);
 
         $vector = Embeddings::for([$query])
             ->dimensions((int) config('eloquent-rag.embedding.dimensions'))
@@ -106,7 +112,7 @@ final class RagSearch
      */
     private function rankedModelIds(array $vector, int $limit, ?float $minSimilarity = null): Collection
     {
-        $chunkDistances = DB::table('rag_chunks')
+        $chunkDistances = DB::connection($this->connectionName)->table('rag_chunks')
             ->join('rag_documents', 'rag_documents.id', '=', 'rag_chunks.document_id')
             ->where('rag_documents.model_type', $this->modelClass)
             ->whereNotNull('rag_chunks.embedding')
@@ -123,7 +129,7 @@ final class RagSearch
             ->select('rag_documents.model_id')
             ->selectVectorDistance('rag_chunks.embedding', $vector, 'distance');
 
-        return DB::query()
+        return DB::connection($this->connectionName)->query()
             ->fromSub($chunkDistances, 'ranked_chunks')
             ->select('ranked_chunks.model_id')
             ->groupBy('ranked_chunks.model_id')
