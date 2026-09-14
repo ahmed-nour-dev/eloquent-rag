@@ -108,6 +108,53 @@ it('regenerates chunk embeddings via embed() after an embedding model change inv
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->model === 'text-embedding-3-large');
 });
 
+it('drops a stale embedding write instead of persisting it when a concurrent sync() reconciles the chunk mid-embed()', function () {
+    // Regression test for issue #29: embed() re-derives chunk text (via its
+    // own render + chunk) and only writes back to the exact rows it read as
+    // pending. If a concurrent sync() reconciles this same chunk in between
+    // — changing its content_hash and nulling its embedding, per
+    // reconcileChunks() — an unconditional write here would pair the new
+    // content_hash with an embedding computed from the old text, and
+    // whereNull('embedding') would never surface it for re-embedding again.
+    $product = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    $raced = false;
+
+    RagChunk::retrieved(function (RagChunk $retrieved) use ($chunk, $product, &$raced): void {
+        if ($raced || $retrieved->id !== $chunk->id) {
+            return;
+        }
+
+        // Only fire once — sync() below retrieves this same chunk again
+        // while reconciling it, which must not re-enter this callback.
+        $raced = true;
+
+        // Simulate a concurrent sync() (another worker, dependency
+        // fan-out) landing between embed()'s read of $chunk and its write
+        // back, having changed the model's rendered content in the
+        // meantime.
+        $product->update(['name' => 'Bluetooth Speaker Pro']);
+        $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+    });
+
+    $product->rag()->embed();
+
+    RagChunk::flushEventListeners();
+
+    // The write embed() attempted for the old content must have been
+    // skipped: the chunk's content_hash moved on before the write landed.
+    expect($chunk->fresh()->embedding)->toBeNull();
+
+    // A subsequent embed() call picks it up correctly, against the now-
+    // current content.
+    $product->rag()->embed();
+    expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+});
+
 it('performs a real sync -> embed -> search cycle against the vector column without error', function () {
     $match = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
     $match->rag()->embed();
