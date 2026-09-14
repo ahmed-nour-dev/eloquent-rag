@@ -56,6 +56,20 @@ it('enforces uniqueness of (model_type, model_id) on rag_documents', function ()
     ]))->toThrow(QueryException::class);
 });
 
+it('enforces uniqueness of (document_id, dependency_type, dependency_id) on rag_dependencies', function () {
+    $document = RagDocument::create([
+        'model_type' => 'App\\Models\\Product',
+        'model_id' => 1,
+        'content_hash' => str_repeat('a', 64),
+        'configuration_hash' => str_repeat('b', 64),
+    ]);
+
+    $document->dependencies()->create(['dependency_type' => 'App\\Models\\Category', 'dependency_id' => 5]);
+
+    expect(fn () => $document->dependencies()->create(['dependency_type' => 'App\\Models\\Category', 'dependency_id' => 5]))
+        ->toThrow(QueryException::class);
+});
+
 it('cascades chunk and dependency deletion when the document is deleted', function () {
     $document = RagDocument::create([
         'model_type' => 'App\\Models\\Product',

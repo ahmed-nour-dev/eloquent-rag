@@ -40,7 +40,17 @@ rag_dependencies
   document_id, dependency_type, dependency_id
   index (dependency_type, dependency_id)   <- the reverse-lookup hot path
   index (document_id)
+  unique (document_id, dependency_type, dependency_id)
 ```
+
+The unique constraint exists because the diff above is keyed on that triple:
+without it, two overlapping `sync()` calls for the same document could each
+insert the same dependency, and — since the delta reconciliation only ever
+deletes rows it can positively identify as stale, not "whatever's left over
+after dedup" — a duplicate like that would never get cleaned up on a later
+sync the way it would have under the old delete-all-then-reinsert pass. The
+constraint turns that race into a `QueryException` on the losing insert
+instead of a silently accumulating duplicate row.
 
 A `belongsToMany` relation (`->relation('features.name')`) produces one
 dependency row per related model in the collection — a product with three
