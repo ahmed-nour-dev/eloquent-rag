@@ -45,8 +45,10 @@ class RagDoctorCommand extends Command
             if (! $this->checkDimensionMatch()) {
                 $hasFailure = true;
             }
+
+            $this->checkVectorIndex();
         } else {
-            $this->line('  (skipping dimension check — no supported vector backend)');
+            $this->line('  (skipping dimension and vector index checks — no supported vector backend)');
         }
 
         $this->checkQueueDriver();
@@ -148,6 +150,45 @@ class RagDoctorCommand extends Command
         };
 
         return VectorBackendCapability::parseVectorDimensions($typeDescription);
+    }
+
+    /**
+     * WARN-level, not FAIL: an unindexed vector column is a performance
+     * problem, not a correctness one (see ADR-0008). pgvector gets a real
+     * index automatically (migration
+     * 2026_01_04_000001_add_vector_index_to_rag_chunks_table); MariaDB
+     * cannot, because its VECTOR INDEX requires the indexed column to be
+     * NOT NULL and rag_chunks.embedding is deliberately nullable (chunks
+     * exist before embed() populates them) — this surfaces that trade-off
+     * before a slow query in production does.
+     */
+    private function checkVectorIndex(): void
+    {
+        match (DB::connection()->getDriverName()) {
+            'pgsql' => $this->checkPostgresVectorIndex(),
+            'mysql', 'mariadb' => $this->warn(
+                '[WARN] No vector index on rag_chunks.embedding: MariaDB requires the indexed column to be NOT NULL, '.
+                'but this column is deliberately nullable (see ADR-0008). Every vector search runs a full table scan '.
+                'of rag_chunks on this connection — see docs/backend-support.md#vector-indexing for the recommended strategy at scale.'
+            ),
+            default => null,
+        };
+    }
+
+    private function checkPostgresVectorIndex(): void
+    {
+        $index = DB::connection()->selectOne(
+            'select indexdef from pg_indexes where tablename = ? and indexname = ?',
+            ['rag_chunks', 'rag_chunks_embedding_vector_index'],
+        );
+
+        if ($index === null) {
+            $this->warn('[WARN] Expected vector index rag_chunks_embedding_vector_index on rag_chunks.embedding is missing — vector search will run a full table scan. See docs/backend-support.md#vector-indexing.');
+
+            return;
+        }
+
+        $this->info("[PASS] rag_chunks.embedding has a vector index: {$index->indexdef}");
     }
 
     private function checkQueueDriver(): void

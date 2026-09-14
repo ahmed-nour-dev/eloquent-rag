@@ -11,6 +11,7 @@ use Ahmednour\EloquentRag\Tests\Integration\PostgresAcceptanceTestCase;
 use Ahmednour\EloquentRag\VectorBackendCapability;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Embeddings;
 
 /**
@@ -247,4 +248,26 @@ it('rag:doctor reads the real declared vector column dimension and matches confi
     $output = Artisan::output();
 
     expect($output)->toContain('[PASS] rag_chunks.embedding is declared as vector(8), matching');
+});
+
+it('creates a real HNSW vector index on rag_chunks.embedding matching the cosine distance this package queries with (ADR-0008)', function () {
+    $index = DB::selectOne(
+        'select indexdef from pg_indexes where tablename = ? and indexname = ?',
+        ['rag_chunks', 'rag_chunks_embedding_vector_index'],
+    );
+
+    expect($index)->not->toBeNull();
+
+    $definition = strtolower($index->indexdef);
+    expect($definition)->toContain('using hnsw');
+    expect($definition)->toContain('vector_cosine_ops');
+});
+
+it('rag:doctor reports the real vector index status on pgvector', function () {
+    createSyncedPostgresProduct();
+
+    Artisan::call('rag:doctor');
+    $output = Artisan::output();
+
+    expect($output)->toContain('[PASS] rag_chunks.embedding has a vector index');
 });
