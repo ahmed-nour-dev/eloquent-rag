@@ -42,6 +42,13 @@ A `belongsToMany` relation (`->relation('features.name')`) produces one
 dependency row per related model in the collection — a product with three
 attached features gets three `Feature` dependency rows.
 
+Before any of this runs, `sync()` validates that every segment of every
+declared path except the last is a real Eloquent relationship method on
+the model it's called against — a mistyped or since-renamed segment
+throws `InvalidRelationPath` immediately instead of silently resolving to
+an empty dependency set. This is what makes ADR-0002's claim true that an
+invalid declared path is "a loud, obvious failure."
+
 ## The reverse lookup
 
 When any model is saved, the package checks whether `(get_class($model),
