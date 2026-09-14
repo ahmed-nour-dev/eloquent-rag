@@ -188,6 +188,78 @@ it('ranks documents by their single best chunk, not by how many close chunks one
     expect($results->pluck('id')->all())->toBe([$bestMatch->id, $secondBest->id]);
 });
 
+it('excludes a document whose best chunk falls below the minSimilarity floor, using exact vector geometry', function () {
+    // Same exact-geometry technique as the ranking regression test above:
+    // identical vectors are always cosine similarity 1.0, orthogonal
+    // vectors are always exactly 0.0 — not an approximation.
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $unitVector = fn (int $onIndex, float $value = 1.0): array => array_replace(
+        array_fill(0, $vectorDimensions, 0.0),
+        [$onIndex => $value],
+    );
+
+    $match = createSyncedMariaDbProduct('Best Match', 'DOC-A');
+    $tooFar = createSyncedMariaDbProduct('Too Far', 'DOC-B');
+
+    $documentIdFor = fn (Product $product): int => RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->value('id');
+
+    // Identical to the query vector: cosine similarity exactly 1.0.
+    RagChunk::create([
+        'document_id' => $documentIdFor($match),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('a', 64),
+        'embedding' => $unitVector(0),
+    ]);
+
+    // Orthogonal to the query vector: cosine similarity exactly 0.0 — below
+    // the 0.5 floor below, so this document must be excluded entirely, not
+    // merely ranked last.
+    RagChunk::create([
+        'document_id' => $documentIdFor($tooFar),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('b', 64),
+        'embedding' => $unitVector(1),
+    ]);
+
+    Embeddings::fake([[$unitVector(0)]]);
+
+    $results = Product::searchRag('anything', 5, minSimilarity: 0.5);
+
+    expect($results->pluck('id')->all())->toBe([$match->id]);
+});
+
+it('treats minSimilarity as an inclusive floor at the exact boundary', function () {
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $unitVector = fn (int $onIndex, float $value = 1.0): array => array_replace(
+        array_fill(0, $vectorDimensions, 0.0),
+        [$onIndex => $value],
+    );
+
+    $product = createSyncedMariaDbProduct('Orthogonal Match', 'DOC-A');
+
+    $documentId = RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->value('id');
+
+    // Orthogonal to the query vector: cosine similarity exactly 0.0.
+    RagChunk::create([
+        'document_id' => $documentId,
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('a', 64),
+        'embedding' => $unitVector(1),
+    ]);
+
+    Embeddings::fake([[$unitVector(0)]]);
+
+    $results = Product::searchRag('anything', 5, minSimilarity: 0.0);
+
+    expect($results->pluck('id')->all())->toBe([$product->id]);
+});
+
 it('rag:doctor reads the real declared vector column dimension and matches config', function () {
     createSyncedMariaDbProduct();
 

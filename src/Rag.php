@@ -32,9 +32,12 @@ final class Rag
      * `Product::searchRag($query, $limit)` — see HasRag::searchRag().
      *
      * @param  class-string  $modelClass
+     * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0)
+     *                                     a chunk must meet to be considered
+     *                                     a match — see RagSearch::search().
      */
-    public static function search(string $modelClass, string $query, int $limit = 10): EloquentCollection
+    public static function search(string $modelClass, string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
-        return (new RagSearch($modelClass))->search($query, $limit);
+        return (new RagSearch($modelClass))->search($query, $limit, $minSimilarity);
     }
 }

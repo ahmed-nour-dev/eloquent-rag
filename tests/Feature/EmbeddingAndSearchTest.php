@@ -69,6 +69,31 @@ it('rejects Rag::search() the same way as the instance-bound entry point', funct
     Embeddings::assertNothingGenerated();
 });
 
+it('still applies a valid minSimilarity and reaches the unsupported-backend rejection', function () {
+    Embeddings::fake();
+
+    createSyncedProduct();
+
+    expect(fn () => Product::searchRag('a bluetooth speaker', minSimilarity: 0.7))
+        ->toThrow(UnsupportedVectorBackend::class);
+
+    Embeddings::assertNothingGenerated();
+});
+
+it('rejects an out-of-range minSimilarity before checking backend support or generating embeddings', function (float $minSimilarity) {
+    Embeddings::fake();
+
+    createSyncedProduct();
+
+    expect(fn () => Product::searchRag('a bluetooth speaker', minSimilarity: $minSimilarity))
+        ->toThrow(InvalidArgumentException::class);
+
+    Embeddings::assertNothingGenerated();
+})->with([
+    'below 0.0' => [-0.01],
+    'above 1.0' => [1.01],
+]);
+
 /**
  * Isolated, honest check of laravel/ai's real API shape using its official
  * fake — NOT routed through RagSynchronizer/RagSearch (which correctly

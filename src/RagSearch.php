@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Ai\Embeddings;
 
 /**
@@ -41,10 +42,23 @@ final class RagSearch
     }
 
     /**
+     * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0,
+     *                                     where 1.0 is identical) a chunk
+     *                                     must meet to be considered a
+     *                                     match. Null (the default) applies
+     *                                     no floor — the nearest `$limit`
+     *                                     chunks are returned regardless of
+     *                                     how distant they are.
+     *
      * @throws UnsupportedVectorBackend
+     * @throws InvalidArgumentException if $minSimilarity is outside [0.0, 1.0]
      */
-    public function search(string $query, int $limit = 10): EloquentCollection
+    public function search(string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
+        if ($minSimilarity !== null && ($minSimilarity < 0.0 || $minSimilarity > 1.0)) {
+            throw new InvalidArgumentException('$minSimilarity must be between 0.0 and 1.0, got '.$minSimilarity.'.');
+        }
+
         VectorBackendCapability::ensureSupported();
 
         $vector = Embeddings::for([$query])
@@ -55,7 +69,7 @@ final class RagSearch
             )
             ->first();
 
-        $orderedIds = $this->rankedModelIds($vector, $limit);
+        $orderedIds = $this->rankedModelIds($vector, $limit, $minSimilarity);
 
         if ($orderedIds->isEmpty()) {
             return (new $this->modelClass)->newCollection();
@@ -87,15 +101,25 @@ final class RagSearch
      * for this vector, not a heuristic approximation of it.
      *
      * @param  array<int, float>  $vector
+     * @param  float|null  $minSimilarity  See search()'s param doc.
      * @return Collection<int, int|string>
      */
-    private function rankedModelIds(array $vector, int $limit): Collection
+    private function rankedModelIds(array $vector, int $limit, ?float $minSimilarity = null): Collection
     {
         $chunkDistances = DB::table('rag_chunks')
             ->join('rag_documents', 'rag_documents.id', '=', 'rag_chunks.document_id')
             ->where('rag_documents.model_type', $this->modelClass)
             ->whereNotNull('rag_chunks.embedding')
             ->when($this->scope, fn (Builder $builder) => ($this->scope)($builder))
+            ->when(
+                $minSimilarity !== null,
+                // A chunk that fails the floor shouldn't even count toward
+                // "does this document have a good chunk" — filtering here,
+                // before the MIN(distance) aggregate below, is equivalent to
+                // (and cheaper than) aggregating first and filtering the
+                // per-document minimum afterward.
+                fn (Builder $builder) => $builder->whereVectorDistanceLessThan('rag_chunks.embedding', $vector, 1 - $minSimilarity),
+            )
             ->select('rag_documents.model_id')
             ->selectVectorDistance('rag_chunks.embedding', $vector, 'distance');
 
