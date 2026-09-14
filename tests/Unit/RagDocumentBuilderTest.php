@@ -10,6 +10,7 @@ use Ahmednour\EloquentRag\Tests\Fixtures\Models\Brand;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Category;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Feature;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Product;
+use Ahmednour\EloquentRag\Tests\Fixtures\StubTokenizer;
 
 function makeProduct(): Product
 {
@@ -99,7 +100,7 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
 
     $configA = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
@@ -107,7 +108,7 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
 
     $configB = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 800, 'overlap' => 40],
+        ['max_tokens' => 800, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
@@ -120,7 +121,7 @@ it('leaves content_hash unchanged when only chunk config changes, but changes co
 it('changes configuration_hash when only the embedding provider changes', function () {
     $configA = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         'openai',
         'text-embedding-3-small',
         1536,
@@ -128,7 +129,7 @@ it('changes configuration_hash when only the embedding provider changes', functi
 
     $configB = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         'ollama',
         'text-embedding-3-small',
         1536,
@@ -140,7 +141,7 @@ it('changes configuration_hash when only the embedding provider changes', functi
 it('changes configuration_hash when only the embedding model changes', function () {
     $configA = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
@@ -148,7 +149,7 @@ it('changes configuration_hash when only the embedding model changes', function 
 
     $configB = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-large',
         1536,
@@ -160,7 +161,7 @@ it('changes configuration_hash when only the embedding model changes', function 
 it('changes configuration_hash when only the embedding dimensions change', function () {
     $configA = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
@@ -168,7 +169,7 @@ it('changes configuration_hash when only the embedding dimensions change', funct
 
     $configB = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         3072,
@@ -180,7 +181,7 @@ it('changes configuration_hash when only the embedding dimensions change', funct
 it('produces the same configuration_hash regardless of associative key order in chunk options', function () {
     $configA = Hasher::configuration(
         productDefinition(),
-        ['max_tokens' => 400, 'overlap' => 40],
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
@@ -188,11 +189,31 @@ it('produces the same configuration_hash regardless of associative key order in 
 
     $configB = Hasher::configuration(
         productDefinition(),
-        ['overlap' => 40, 'max_tokens' => 400],
+        ['overlap' => 40, 'max_tokens' => 400, 'tokenizer' => 'whitespace'],
         null,
         'text-embedding-3-small',
         1536,
     );
 
     expect($configA)->toBe($configB);
+});
+
+it('changes configuration_hash when only the tokenizer changes', function () {
+    $configA = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    $configB = Hasher::configuration(
+        productDefinition(),
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => StubTokenizer::class],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    expect($configA)->not->toBe($configB);
 });
