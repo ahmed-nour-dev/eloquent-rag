@@ -104,3 +104,20 @@ distance. `Product::rag()->search(...)` — the literal form named in the
 build plan — isn't possible in PHP once `rag()` already exists as a real
 instance method (a class can't have one method be both instance and
 static), so `searchRag()` is the static entry point instead.
+
+### Filtering by relevance
+
+A nearest-neighbor match is not necessarily a *relevant* one — for a query
+unrelated to anything indexed, the nearest `limit` chunks are still
+returned by default, however distant they are. Pass `minSimilarity` to
+apply a floor instead:
+
+```php
+Product::searchRag('a bluetooth speaker', limit: 10, minSimilarity: 0.70);
+```
+
+`minSimilarity` is a cosine similarity in `[0.0, 1.0]`, where `1.0` is
+identical. Chunks scoring below the threshold are excluded entirely,
+rather than merely ranked last — a query with no sufficiently close match
+can return fewer than `limit` results, or none. Omitting it (the default)
+preserves the original no-floor behavior.

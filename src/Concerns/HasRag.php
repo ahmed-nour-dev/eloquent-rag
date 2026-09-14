@@ -56,10 +56,14 @@ trait HasRag
      * through to __callStatic. `searchRag()` is the static entry point
      * instead; `Rag::search(static::class, ...)` is the equivalent
      * class-agnostic form.
+     *
+     * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0)
+     *                                     a chunk must meet to be considered
+     *                                     a match — see RagSearch::search().
      */
-    public static function searchRag(string $query, int $limit = 10): EloquentCollection
+    public static function searchRag(string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
-        return (new RagSearch(static::class))->search($query, $limit);
+        return (new RagSearch(static::class))->search($query, $limit, $minSimilarity);
     }
 
     protected static function bootHasRag(): void
