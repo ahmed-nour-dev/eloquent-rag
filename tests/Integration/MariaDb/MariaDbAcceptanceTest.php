@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Ahmednour\EloquentRag\Models\RagChunk;
+use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Brand;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Category;
@@ -106,6 +107,35 @@ it('regenerates chunk embeddings via embed() after an embedding model change inv
 
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->model === 'text-embedding-3-large');
+});
+
+it('invalidates and regenerates a chunk embedding via sync() -> embed() when the underlying content genuinely changes', function () {
+    // Distinct from the embedding-model-change test above: here nothing
+    // about the embedding config changes — sync() must detect the
+    // content_hash drift caused by a real content edit on its own, and
+    // embed() must then pick the now-nulled chunk back up against the real
+    // vector column.
+    $product = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
+    $product->rag()->embed();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+    $originalEmbedding = $chunk->embedding;
+    $originalHash = $chunk->content_hash;
+
+    expect($originalEmbedding)->not->toBeNull();
+
+    $product->update(['name' => 'Bluetooth Speaker Pro']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($chunk->fresh()->content_hash)->not->toBe($originalHash);
+    expect($chunk->fresh()->embedding)->toBeNull();
+
+    $product->rag()->embed();
+
+    expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    expect($chunk->fresh()->embedding)->not->toEqual($originalEmbedding);
 });
 
 it('drops a stale embedding write instead of persisting it when a concurrent sync() reconciles the chunk mid-embed()', function () {
@@ -331,4 +361,31 @@ it('rag:doctor warns that vector search runs a full table scan without an indexe
 
     expect($output)->toContain('[WARN] No vector index on rag_chunks.embedding')
         ->toContain('NOT NULL');
+});
+
+it('cascades document, chunk, and dependency deletion against the real vector column when the model is deleted', function () {
+    // Closes the lifecycle loop this suite otherwise stops short of: every
+    // earlier test here proves creation/embedding/search against a genuine
+    // vector column, but none of them prove that deleting the owning model
+    // actually clears its row out of that same real column afterward.
+    // config('queue.default') is 'sync' in this test case, so
+    // ForgetRagDocument (dispatched after-commit per ADR-0006) runs inline
+    // and this assertion needs no queue draining.
+    $product = createSyncedMariaDbProduct();
+    $product->rag()->embed();
+
+    $document = RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->firstOrFail();
+    $documentId = $document->id;
+
+    expect(RagChunk::where('document_id', $documentId)->count())->toBeGreaterThan(0);
+    expect(RagDependency::where('document_id', $documentId)->count())->toBeGreaterThan(0);
+
+    $product->delete();
+
+    expect(RagDocument::find($documentId))->toBeNull();
+    expect(RagChunk::where('document_id', $documentId)->count())->toBe(0);
+    expect(RagDependency::where('document_id', $documentId)->count())->toBe(0);
 });
