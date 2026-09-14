@@ -36,7 +36,11 @@ database connection from the app's, per
 - Invalidation and sync jobs are dispatched **only after the enclosing
   transaction commits** (Laravel's after-commit dispatch), never from
   inside an open transaction. Verified explicitly by Phase 0 spike item 9,
-  productionized in Phase 2's `SyncRagDocument` job.
+  productionized in Phase 2's `SyncRagDocument` job. `deleted` is held to
+  the same rule: `HasRag` dispatches `ForgetRagDocument` after commit
+  rather than deleting the document inline from the observer, so a
+  `delete()` inside a transaction that later rolls back never removes RAG
+  state for a model row that ends up still existing.
 - Mass-update paths that bypass Eloquent events are **not silently
   covered**. This is a documented limitation, not a bug: developers using
   `Model::where(...)->update()` must call the explicit `Rag::invalidate()`
