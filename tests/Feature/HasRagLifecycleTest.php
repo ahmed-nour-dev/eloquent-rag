@@ -11,6 +11,7 @@ use Ahmednour\EloquentRag\Tests\Fixtures\Models\Brand;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Category;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Feature;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Product;
+use Ahmednour\EloquentRag\Tests\Fixtures\StubTokenizer;
 use Illuminate\Support\Carbon;
 
 afterEach(fn () => Carbon::setTestNow());
@@ -200,6 +201,20 @@ it('invalidates every chunk embedding, even unchanged ones, when the embedding p
     $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
 
     config(['eloquent-rag.embedding.provider' => 'ollama']);
+    $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+
+    expect($document->fresh()->chunks->pluck('embedding')->filter()->isEmpty())->toBeTrue();
+});
+
+it('invalidates every chunk embedding, even unchanged ones, when the tokenizer changes', function () {
+    $category = Category::create(['name' => 'Electronics']);
+    $brand = Brand::create(['name' => 'Acme']);
+    $product = createSpeaker($category, $brand);
+
+    $document = documentFor($product);
+    $document->chunks->each(fn (RagChunk $chunk) => $chunk->update(['embedding' => [0.1, 0.2, 0.3]]));
+
+    config(['eloquent-rag.chunk.tokenizer' => StubTokenizer::class]);
     $product->fresh(['category', 'brand', 'features'])->rag()->sync();
 
     expect($document->fresh()->chunks->pluck('embedding')->filter()->isEmpty())->toBeTrue();

@@ -11,10 +11,19 @@ return [
     | Fed into Chunker and into ADR-0004's configuration_hash. Changing these
     | values invalidates every document via the configuration hash, not the
     | content hash — no separate migration step is needed.
+    |
+    | `tokenizer` selects the Tokenizer Chunker uses to split text into
+    | token-sized pieces: 'whitespace' (the default, zero dependencies,
+    | approximates tokens by word count) or the fully-qualified class name
+    | of your own class implementing Ahmednour\EloquentRag\Support\Tokenizer
+    | for real model-aware sizing (e.g. wrapping a tiktoken binding). See
+    | ADR-0009 (docs/adr/0009-tokenizer-abstraction.md) and
+    | docs/tokenization.md.
     */
     'chunk' => [
         'max_tokens' => 400,
         'overlap' => 40,
+        'tokenizer' => 'whitespace',
     ],
 
     /*

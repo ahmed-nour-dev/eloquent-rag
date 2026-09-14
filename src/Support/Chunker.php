@@ -15,6 +15,7 @@ final class Chunker
     public function __construct(
         private readonly int $maxTokens = 400,
         private readonly int $overlap = 40,
+        private readonly Tokenizer $tokenizer = new WhitespaceTokenizer,
     ) {
         if ($this->maxTokens < 1) {
             throw new InvalidArgumentException('maxTokens must be at least 1.');
@@ -34,7 +35,7 @@ final class Chunker
      */
     public function chunk(string $text): array
     {
-        $tokens = $this->tokenize($text);
+        $tokens = $this->tokenizer->encode($text);
 
         if ($tokens === []) {
             return [];
@@ -45,7 +46,7 @@ final class Chunker
         $total = count($tokens);
 
         for ($start = 0; $start < $total; $start += $step) {
-            $chunks[] = implode(' ', array_slice($tokens, $start, $this->maxTokens));
+            $chunks[] = $this->tokenizer->decode(array_slice($tokens, $start, $this->maxTokens));
 
             if ($start + $this->maxTokens >= $total) {
                 break;
@@ -53,24 +54,5 @@ final class Chunker
         }
 
         return $chunks;
-    }
-
-    /**
-     * Approximates token count by whitespace-delimited words. This is
-     * deliberately simple: real tokenizer alignment with the embedding
-     * model is a Phase 3 concern (per the build plan's sequencing
-     * rationale), not something Phase 1's determinism guarantee needs.
-     *
-     * @return list<string>
-     */
-    private function tokenize(string $text): array
-    {
-        $trimmed = trim($text);
-
-        if ($trimmed === '') {
-            return [];
-        }
-
-        return preg_split('/\s+/u', $trimmed) ?: [];
     }
 }

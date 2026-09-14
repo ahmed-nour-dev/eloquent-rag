@@ -12,6 +12,7 @@ use Ahmednour\EloquentRag\Support\Chunker;
 use Ahmednour\EloquentRag\Support\Hasher;
 use Ahmednour\EloquentRag\Support\RagDocumentBuilder;
 use Ahmednour\EloquentRag\Support\RelationPathValidator;
+use Ahmednour\EloquentRag\Support\TokenizerFactory;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -180,7 +181,7 @@ final class RagSynchronizer
             $this->model->unsetRelations();
             $rendered = (new RagDocumentBuilder)->render($this->model, $this->definition);
             $chunkOptions = $this->chunkOptions();
-            $chunkTexts = (new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap']))->chunk($rendered);
+            $chunkTexts = (new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap'], TokenizerFactory::make()))->chunk($rendered);
 
             $inputs = $pendingChunks
                 ->map(fn (RagChunk $chunk): string => $chunkTexts[$chunk->chunk_index] ?? '')
@@ -211,21 +212,22 @@ final class RagSynchronizer
             ->first();
     }
 
-    /** @return array{max_tokens: int, overlap: int} */
+    /** @return array{max_tokens: int, overlap: int, tokenizer: string} */
     private function chunkOptions(): array
     {
         return [
             'max_tokens' => (int) config('eloquent-rag.chunk.max_tokens', 400),
             'overlap' => (int) config('eloquent-rag.chunk.overlap', 40),
+            'tokenizer' => TokenizerFactory::make()->identifier(),
         ];
     }
 
     /**
-     * @param  array{max_tokens: int, overlap: int}  $chunkOptions
+     * @param  array{max_tokens: int, overlap: int, tokenizer: string}  $chunkOptions
      */
     private function reconcileChunks(RagDocument $document, string $rendered, array $chunkOptions, bool $configurationChanged = false): void
     {
-        $chunker = new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap']);
+        $chunker = new Chunker($chunkOptions['max_tokens'], $chunkOptions['overlap'], TokenizerFactory::make());
         $chunks = $chunker->chunk($rendered);
 
         $existingChunks = $document->chunks()->get()->keyBy('chunk_index');

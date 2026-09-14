@@ -20,7 +20,7 @@ final class Hasher
     }
 
     /**
-     * @param  array{max_tokens: int, overlap: int}  $chunkOptions
+     * @param  array{max_tokens: int, overlap: int, tokenizer: string}  $chunkOptions
      */
     public static function configuration(
         RagDefinition $definition,

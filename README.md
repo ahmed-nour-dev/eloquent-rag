@@ -50,6 +50,7 @@ for the full setup once one exists.)*
 - [docs/dependency-model.md](docs/dependency-model.md) — how documents declare and track dependencies
 - [docs/fanout-behavior.md](docs/fanout-behavior.md) — batching, coalescing, and the two limitations you need to know about
 - [docs/backend-support.md](docs/backend-support.md) — the support matrix and what `rag:doctor` checks
+- [docs/tokenization.md](docs/tokenization.md) — the `Tokenizer` contract and plugging in model-aware chunk sizing
 - [docs/rebuild-and-migration.md](docs/rebuild-and-migration.md) — choosing between `rag:sync`/`rag:rebuild`/`rag:prune`/`rag:forget`
 - [docs/benchmarks.md](docs/benchmarks.md) — fan-out at 10k/100k/1M documents, published honestly
 - [docs/principles.md](docs/principles.md) — core principle + explicit non-goals

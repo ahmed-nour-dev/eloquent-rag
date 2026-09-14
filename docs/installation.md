@@ -25,7 +25,7 @@ This creates `config/eloquent-rag.php` with the package's defaults:
 
 ```php
 return [
-    'chunk' => ['max_tokens' => 400, 'overlap' => 40],
+    'chunk' => ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
     'embedding' => ['provider' => null, 'model' => 'text-embedding-3-small', 'dimensions' => 1536],
     'queue' => ['batch_size' => 500],
     'invalidation' => ['debounce_seconds' => 5],

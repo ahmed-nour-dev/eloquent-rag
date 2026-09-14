@@ -40,8 +40,9 @@ Use this, not `rag:sync`, when:
   (this already invalidates every document via `configuration_hash`
   automatically, but `rag:rebuild` is how you actually push the re-sync
   through rather than waiting for the next unrelated save).
-- You changed chunking settings (`max_tokens`/`overlap`) and want the new
-  boundaries applied immediately.
+- You changed chunking settings (`max_tokens`/`overlap`/`tokenizer`) and
+  want the new boundaries applied immediately — see
+  [tokenization.md](tokenization.md) for the `tokenizer` option.
 - You fixed a bug in a model's `toRagDefinition()` rendering and need
   already-synced documents to pick up the corrected output even though
   their *source data* hasn't changed (a normal `sync()` would short-circuit

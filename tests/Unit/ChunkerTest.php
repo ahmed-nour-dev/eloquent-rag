@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Ahmednour\EloquentRag\Support\Chunker;
+use Ahmednour\EloquentRag\Support\Tokenizer;
 
 it('chunks deterministically for identical input and config', function () {
     $chunker = new Chunker(maxTokens: 5, overlap: 2);
@@ -45,4 +46,30 @@ it('rejects overlap greater than or equal to maxTokens', function () {
 
 it('rejects a non-positive maxTokens', function () {
     expect(fn () => new Chunker(maxTokens: 0, overlap: 0))->toThrow(InvalidArgumentException::class);
+});
+
+it('delegates token splitting to the injected tokenizer instead of hard-coding whitespace', function () {
+    $tokenizer = new class implements Tokenizer
+    {
+        public function encode(string $text): array
+        {
+            // Splits on '|' instead of whitespace, so this only passes
+            // if Chunker actually uses the injected tokenizer.
+            return explode('|', $text);
+        }
+
+        public function decode(array $tokens): string
+        {
+            return implode('-', $tokens);
+        }
+
+        public function identifier(): string
+        {
+            return 'pipe-delimited';
+        }
+    };
+
+    $chunker = new Chunker(maxTokens: 2, overlap: 0, tokenizer: $tokenizer);
+
+    expect($chunker->chunk('a|b|c|d'))->toBe(['a-b', 'c-d']);
 });
