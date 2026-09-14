@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       matrix:
         # ADR-0003 pins the Laravel floor but sets no PHP ceiling
-        # (composer.json requires php: ^8.3) — cross both supported PHP
+        # (composer.json requires php: ^8.3) — cross all three supported PHP
         # versions against both Laravel bounds so a PHP-version-specific
         # regression (e.g. in the vector grammar's parameter binding) can't
         # hide behind a single PHP version the way #1/#3 hid behind sqlite.
-        php: ["8.3", "8.4"]
+        php: ["8.3", "8.4", "8.5"]
         laravel: [floor, latest]
     services:
       mariadb:
@@ -101,7 +101,7 @@ jobs:
       fail-fast: false
       matrix:
         # See the mariadb job's matrix comment — same rationale applies here.
-        php: ["8.3", "8.4"]
+        php: ["8.3", "8.4", "8.5"]
         laravel: [floor, latest]
     services:
       postgres:
