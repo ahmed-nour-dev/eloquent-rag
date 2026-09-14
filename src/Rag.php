@@ -32,6 +32,9 @@ final class Rag
      * `Product::searchRag($query, $limit)` — see HasRag::searchRag().
      *
      * @param  class-string  $modelClass
+     * @param  int  $limit  Must be at least 1; values above
+     *                      config('eloquent-rag.search.max_limit') are
+     *                      silently clamped — see RagSearch::search().
      * @param  float|null  $minSimilarity  Minimum cosine similarity (0.0-1.0)
      *                                     a chunk must meet to be considered
      *                                     a match — see RagSearch::search().
