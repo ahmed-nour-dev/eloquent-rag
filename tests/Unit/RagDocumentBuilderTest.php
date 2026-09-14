@@ -80,6 +80,30 @@ it('produces a stable rendered document snapshot', function () {
     );
 });
 
+it('sorts an array-valued content attribute for determinism when not declared ordered', function () {
+    $product = makeProduct();
+    $product->setAttribute('steps', ['Step 3: Submit', 'Step 1: Login', 'Step 2: Verify']);
+
+    $definition = Rag::make()->content(['steps']);
+    $builder = new RagDocumentBuilder;
+
+    $rendered = $builder->render($product, $definition);
+
+    expect($rendered)->toBe('steps: Step 1: Login, Step 2: Verify, Step 3: Submit');
+});
+
+it('preserves declared order for a content attribute marked ordered', function () {
+    $product = makeProduct();
+    $product->setAttribute('steps', ['Step 3: Submit', 'Step 1: Login', 'Step 2: Verify']);
+
+    $definition = Rag::make()->content(['steps'])->ordered('steps');
+    $builder = new RagDocumentBuilder;
+
+    $rendered = $builder->render($product, $definition);
+
+    expect($rendered)->toBe('steps: Step 3: Submit, Step 1: Login, Step 2: Verify');
+});
+
 it('produces a different content_hash when source content changes', function () {
     $product = makeProduct();
     $builder = new RagDocumentBuilder;
@@ -196,6 +220,26 @@ it('produces the same configuration_hash regardless of associative key order in 
     );
 
     expect($configA)->toBe($configB);
+});
+
+it('changes configuration_hash when only a path\'s ordered declaration changes', function () {
+    $configA = Hasher::configuration(
+        Rag::make()->content(['name', 'sku', 'price'])->relation('features.name'),
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    $configB = Hasher::configuration(
+        Rag::make()->content(['name', 'sku', 'price'])->relation('features.name')->ordered('features.name'),
+        ['max_tokens' => 400, 'overlap' => 40, 'tokenizer' => 'whitespace'],
+        null,
+        'text-embedding-3-small',
+        1536,
+    );
+
+    expect($configA)->not->toBe($configB);
 });
 
 it('changes configuration_hash when only the tokenizer changes', function () {

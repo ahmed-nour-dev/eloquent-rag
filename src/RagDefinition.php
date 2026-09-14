@@ -18,6 +18,9 @@ final class RagDefinition
     /** @var list<string> */
     private array $relations = [];
 
+    /** @var list<string> */
+    private array $orderedPaths = [];
+
     public static function make(): self
     {
         return new self;
@@ -56,5 +59,31 @@ final class RagDefinition
     public function relations(): array
     {
         return $this->relations;
+    }
+
+    /**
+     * Marks one or more already-declared content attributes or relation
+     * paths as having semantic ordering, e.g. 'steps.label' on an ordered
+     * hasMany. Canonicalization otherwise sorts array-valued paths for
+     * determinism (since a belongsToMany collection has no guaranteed
+     * retrieval order) — this opts a path out of that sort, preserving the
+     * order the path's values were resolved in.
+     */
+    public function ordered(string ...$paths): self
+    {
+        array_push($this->orderedPaths, ...$paths);
+
+        return $this;
+    }
+
+    public function isOrdered(string $path): bool
+    {
+        return in_array($path, $this->orderedPaths, true);
+    }
+
+    /** @return list<string> */
+    public function orderedPaths(): array
+    {
+        return $this->orderedPaths;
     }
 }

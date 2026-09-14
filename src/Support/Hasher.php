@@ -32,6 +32,7 @@ final class Hasher
         $payload = [
             'content' => $definition->contentAttributes(),
             'relations' => $definition->relations(),
+            'orderedPaths' => $definition->orderedPaths(),
             'chunk' => $chunkOptions,
             'embedding' => [
                 'provider' => $embeddingProvider,
