@@ -39,6 +39,14 @@ There is deliberately no automatic discovery of what to render or depend
 on. If it isn't declared, it isn't tracked — see
 [ADR-0002](adr/0002-declarative-dependency-registry.md).
 
+Every segment of a `->relation()` path except the last must name a real
+Eloquent relationship method (`category` and `brand` above, for instance)
+— `sync()` validates this and throws `InvalidRelationPath` immediately on
+a mistyped or since-renamed segment, rather than silently recording an
+empty dependency set for it. The last segment is the attribute being
+rendered and isn't validated, since attributes can come from accessors or
+casts with nothing static to check.
+
 ## Why `toRagDefinition()`, not `rag()`
 
 The build plan describes this as a `rag()` method. In the actual API,

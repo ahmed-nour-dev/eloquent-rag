@@ -11,6 +11,7 @@ use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Support\Chunker;
 use Ahmednour\EloquentRag\Support\Hasher;
 use Ahmednour\EloquentRag\Support\RagDocumentBuilder;
+use Ahmednour\EloquentRag\Support\RelationPathValidator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -59,6 +60,14 @@ final class RagSynchronizer
         // cache forces every relation the definition touches to be
         // re-read from current database state on every sync().
         $this->model->unsetRelations();
+
+        // Fails loudly on a mistyped or restructured declared path (per
+        // ADR-0002) before anything is rendered, hashed, or written —
+        // rather than the path silently resolving to an empty dependency
+        // set further down in reconcileDependencies().
+        foreach ($this->definition->relations() as $path) {
+            RelationPathValidator::validate($this->model, $path);
+        }
 
         $rendered = (new RagDocumentBuilder)->render($this->model, $this->definition);
         $chunkOptions = $this->chunkOptions();
