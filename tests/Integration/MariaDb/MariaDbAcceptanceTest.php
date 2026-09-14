@@ -11,6 +11,7 @@ use Ahmednour\EloquentRag\Tests\Integration\MariaDbAcceptanceTestCase;
 use Ahmednour\EloquentRag\VectorBackendCapability;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Embeddings;
 
 /**
@@ -267,4 +268,20 @@ it('rag:doctor reads the real declared vector column dimension and matches confi
     $output = Artisan::output();
 
     expect($output)->toContain('[PASS] rag_chunks.embedding is declared as vector(8), matching');
+});
+
+it('does not have a vector index on rag_chunks.embedding, since MariaDB requires NOT NULL and the column is deliberately nullable (ADR-0008)', function () {
+    $indexes = DB::select('show index from rag_chunks where Key_name = ?', ['rag_chunks_embedding_vector_index']);
+
+    expect($indexes)->toBeEmpty();
+});
+
+it('rag:doctor warns that vector search runs a full table scan without an indexed NOT NULL column on MariaDB', function () {
+    createSyncedMariaDbProduct();
+
+    Artisan::call('rag:doctor');
+    $output = Artisan::output();
+
+    expect($output)->toContain('[WARN] No vector index on rag_chunks.embedding')
+        ->toContain('NOT NULL');
 });
