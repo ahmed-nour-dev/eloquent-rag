@@ -319,6 +319,29 @@ it('does not flip the document to synced against a stale snapshot when a concurr
     expect($document->fresh()->status)->toBe('synced');
 });
 
+it('leaves a pending chunk unembedded instead of embedding an empty string when its chunk_index has no match in the re-rendered text (issue #43)', function () {
+    // Regression test for issue #43 — see MariaDbAcceptanceTest's copy of
+    // this test for the full rationale.
+    $product = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
+
+    $document = RagDocument::query()->where('model_id', $product->id)->firstOrFail();
+
+    $realChunk = $document->chunks()->firstOrFail();
+
+    $driftedChunk = RagChunk::query()->create([
+        'document_id' => $document->id,
+        'chunk_index' => $realChunk->chunk_index + 1,
+        'content_hash' => 'drifted-content-hash',
+        'embedding' => null,
+    ]);
+
+    $product->rag()->embed();
+
+    expect($realChunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    expect($driftedChunk->fresh()->embedding)->toBeNull();
+    expect($document->fresh()->status)->toBe('pending');
+});
+
 it('performs a real sync -> embed -> search cycle against the vector column without error', function () {
     $match = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
     $match->rag()->embed();
