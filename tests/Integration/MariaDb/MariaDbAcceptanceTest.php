@@ -341,6 +341,43 @@ it('does not flip the document to synced against a stale snapshot when a concurr
     expect($document->fresh()->status)->toBe('synced');
 });
 
+it('leaves a pending chunk unembedded instead of embedding an empty string when its chunk_index has no match in the re-rendered text (issue #43)', function () {
+    // Regression test for issue #43: embed() re-renders and re-chunks the
+    // model fresh on every call, then looks up each pending chunk's text by
+    // $chunk->chunk_index in that fresh array. A structural-drift chunk —
+    // one whose index no longer has a matching entry (simulated here by
+    // planting a chunk_index the current render will never produce) — used
+    // to fall through a `?? ''` fallback and get a real embedding vector
+    // persisted for empty content. It must now be left out of the embed
+    // call entirely, with its embedding staying NULL.
+    $product = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
+
+    $document = RagDocument::query()->where('model_id', $product->id)->firstOrFail();
+
+    $realChunk = $document->chunks()->firstOrFail();
+
+    $driftedChunk = RagChunk::query()->create([
+        'document_id' => $document->id,
+        'chunk_index' => $realChunk->chunk_index + 1,
+        'content_hash' => 'drifted-content-hash',
+        'embedding' => null,
+    ]);
+
+    $product->rag()->embed();
+
+    // The real chunk — whose index is still present in the fresh render —
+    // gets embedded normally.
+    expect($realChunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+
+    // The drifted chunk must NOT have been embedded against '' — it's left
+    // for a subsequent sync() to reconcile against a consistent snapshot.
+    expect($driftedChunk->fresh()->embedding)->toBeNull();
+
+    // And the document must not be flipped to 'synced' while that drifted
+    // chunk's embedding is still NULL.
+    expect($document->fresh()->status)->toBe('pending');
+});
+
 it('performs a real sync -> embed -> search cycle against the vector column without error', function () {
     $match = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
     $match->rag()->embed();
