@@ -310,13 +310,19 @@ it('skips the provider call entirely when a concurrent sync() invalidates the do
         // re-enter this callback.
         $raced = true;
 
-        // Simulate a concurrent sync() (another worker, dependency
-        // fan-out) landing right after embed() reads the document but
-        // before it dispatches the provider call — changing the rendered
-        // content and re-nulling the chunk's embedding underneath the
-        // in-flight embed() call.
-        $product->update(['name' => 'Bluetooth Speaker Pro']);
-        $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+        // Simulate a concurrent sync() from a genuinely separate worker:
+        // mutate a freshly-loaded model instance rather than $product
+        // itself. embed()'s own $this->model is the same $product object
+        // this test holds — if the race mutated *that* object in place (as
+        // the tests above do, to reconcile the exact chunk/document row
+        // embed() is working with), embed()'s own re-render would pick up
+        // the new content too and this would no longer be the "wasted call
+        // on since-invalidated content" scenario issue #56 is about: a real
+        // concurrent worker can only change the row, never this process's
+        // already-loaded $this->model.
+        $concurrent = Product::find($product->id);
+        $concurrent->update(['name' => 'Bluetooth Speaker Pro']);
+        $concurrent->fresh(['category', 'brand', 'features'])->rag()->sync();
     });
 
     $product->rag()->embed();

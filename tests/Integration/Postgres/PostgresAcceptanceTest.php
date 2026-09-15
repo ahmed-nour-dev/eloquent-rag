@@ -286,8 +286,14 @@ it('skips the provider call entirely when a concurrent sync() invalidates the do
 
         $raced = true;
 
-        $product->update(['name' => 'Bluetooth Speaker Pro']);
-        $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+        // See MariaDbAcceptanceTest's copy of this test: mutating a
+        // separately-loaded instance, not $product itself, keeps embed()'s
+        // own $this->model rendering the old content, matching how a real
+        // separate worker could never touch this process's already-loaded
+        // model.
+        $concurrent = Product::find($product->id);
+        $concurrent->update(['name' => 'Bluetooth Speaker Pro']);
+        $concurrent->fresh(['category', 'brand', 'features'])->rag()->sync();
     });
 
     $product->rag()->embed();

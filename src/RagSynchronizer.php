@@ -240,17 +240,40 @@ final class RagSynchronizer
                 // Cheap re-check immediately before paying for the provider call
                 // (network latency, cost, rate-limit consumption): a concurrent
                 // sync() can land between the read at the top of embed() and
-                // here, having already changed the document's rendered content
-                // out from under $chunkTexts/$inputs above. The per-chunk
-                // content_hash gate below already stops a stale response from
-                // being *persisted*, but by then the round-trip is spent for
-                // nothing — bail out here instead, before dispatching it, and
-                // let a later embed() pass pick these chunks up against the
-                // now-current content (see issue #56).
+                // here, having already changed the document out from under
+                // $chunkTexts/$inputs above. The per-chunk content_hash gate
+                // below already stops a stale response from being
+                // *persisted*, but by then the round-trip is spent for
+                // nothing — bail out here instead, before dispatching it (see
+                // issue #56).
+                //
+                // Deliberately re-hashes $rendered/$chunkOptions instead of
+                // reusing $document->content_hash/configuration_hash: this
+                // embed() call's own $this->model instance can itself have
+                // been mutated by a concurrent sync() sharing the same
+                // in-memory model (dependency fan-out, or same-process
+                // testing) between the read above and here, in which case
+                // $rendered already reflects the *new* content even though
+                // $document's cached hashes are the old snapshot. Comparing
+                // fresh hashes against the document's current DB row (rather
+                // than against the stale in-memory $document) correctly
+                // tells apart "our inputs are still what the document
+                // currently wants" from "a genuine race invalidated them",
+                // instead of always distrusting a $document read before this
+                // call started.
+                $freshContentHash = Hasher::content($rendered);
+                $freshConfigurationHash = Hasher::configuration(
+                    $this->definition,
+                    $chunkOptions,
+                    $provider,
+                    $model,
+                    $dimensions,
+                );
+
                 $stillCurrent = RagDocument::on($connectionName)
                     ->where('id', $document->id)
-                    ->where('content_hash', $document->content_hash)
-                    ->where('configuration_hash', $document->configuration_hash)
+                    ->where('content_hash', $freshContentHash)
+                    ->where('configuration_hash', $freshConfigurationHash)
                     ->exists();
 
                 if ($stillCurrent) {
