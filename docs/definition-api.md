@@ -161,3 +161,33 @@ identical. Chunks scoring below the threshold are excluded entirely,
 rather than merely ranked last — a query with no sufficiently close match
 can return fewer than `limit` results, or none. Omitting it (the default)
 preserves the original no-floor behavior.
+
+### Scoping the query
+
+```php
+Product::rag()->scope(fn ($q) => $q->where('rag_documents.status', 'synced'))
+    ->search('a bluetooth speaker');
+```
+
+`scope()` (available on the `RagSearch` instance, not the static
+`searchRag()` helper) hands the callback the query builder that produces
+chunk-level rows, mid-construction: the `rag_chunks`/`rag_documents` join
+and the fixed `model_type`/`whereNotNull('embedding')` predicates are
+already on it, and it still has a `select()`/`selectVectorDistance()` (and,
+when `minSimilarity` is set, a `whereVectorDistanceLessThan()`) to come
+before it's wrapped in `fromSub()` and grouped/ordered by `MIN(distance)`
+per `model_id`.
+
+This makes `scope()` **filter-only**. Safe: `where`/`whereHas`-style
+predicates against `rag_chunks`/`rag_documents` columns. Unsupported —
+these don't throw, they silently produce wrong results:
+
+- `orWhere` at the top level, which combines with the fixed
+  `model_type`/`whereNotNull` predicates by operator precedence and can
+  defeat them. Wrap it instead:
+  `->where(fn ($q) => $q->where(...)->orWhere(...))`.
+- `select()`/`addSelect()`, `groupBy()`, `orderBy()` — ranking depends on
+  exactly `model_id` + `distance` being selected and on its own
+  grouping/ordering, applied after this callback runs.
+- `limit()`/`offset()` — the result limit is applied once, on the outer
+  aggregated query.

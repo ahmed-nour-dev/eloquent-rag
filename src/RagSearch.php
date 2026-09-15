@@ -39,6 +39,29 @@ final class RagSearch
     /**
      * Applies an arbitrary filter to the underlying rag_chunks/rag_documents
      * query before ranking — e.g. ->scope(fn ($q) => $q->where('rag_documents.status', 'synced')).
+     *
+     * $callback receives the chunk-level query builder mid-construction
+     * (see rankedModelIds()): the rag_chunks/rag_documents join and the
+     * fixed model_type/whereNotNull('embedding') predicates are already
+     * applied, and — when $minSimilarity is set — a
+     * whereVectorDistanceLessThan() predicate is still to come, followed by
+     * select('rag_documents.model_id') + selectVectorDistance(). The whole
+     * result is then wrapped via fromSub() and grouped/ordered by
+     * MIN(distance) per model_id in the outer query.
+     *
+     * This makes scope() **filter-only**. Safe: `where`/`whereHas`-style
+     * predicates against rag_chunks/rag_documents columns. Unsupported —
+     * these don't error, they silently produce wrong rankings:
+     * - `orWhere` at the top level, which combines with the fixed
+     *   model_type/whereNotNull predicates by operator precedence and can
+     *   defeat them, matching chunks that shouldn't be there. Wrap it
+     *   instead: ->where(fn ($q) => $q->where(...)->orWhere(...)).
+     * - `select()`/`addSelect()`, `groupBy()`, `orderBy()` — the select,
+     *   grouping, and ordering that make ranking work are applied by
+     *   rankedModelIds() itself, after this callback runs; changing them
+     *   here conflicts with (or duplicates) that.
+     * - `limit()`/`offset()` — the result limit is applied once, on the
+     *   outer aggregated query, not here.
      */
     public function scope(Closure $callback): self
     {
