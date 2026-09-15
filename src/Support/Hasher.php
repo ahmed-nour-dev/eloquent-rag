@@ -20,6 +20,26 @@ final class Hasher
     }
 
     /**
+     * Per-chunk embedding provenance fingerprint: identifies exactly which
+     * (provider, model, dimensions) produced a chunk's currently-stored
+     * embedding, keyed to that chunk's own content_hash. Deliberately
+     * independent from configuration()'s document-level hash, which also
+     * mixes in the RagDefinition, declared relations, and chunk-layout
+     * settings unrelated to the embedding call itself.
+     */
+    public static function embedding(string $contentHash, ?string $provider, string $model, int $dimensions): string
+    {
+        $payload = [
+            'contentHash' => $contentHash,
+            'provider' => $provider,
+            'model' => $model,
+            'dimensions' => $dimensions,
+        ];
+
+        return hash('sha256', self::canonicalJson($payload));
+    }
+
+    /**
      * @param  array{max_tokens: int, overlap: int, tokenizer: string}  $chunkOptions
      */
     public static function configuration(

@@ -64,6 +64,10 @@ function migrateRagTablesOnto(string $connection): void
         $table->unsignedInteger('chunk_index');
         $table->string('content_hash', 64);
         $table->text('embedding')->nullable();
+        $table->string('embedding_provider')->nullable();
+        $table->string('embedding_model')->nullable();
+        $table->unsignedInteger('embedding_dimensions')->nullable();
+        $table->string('embedding_hash', 64)->nullable();
         $table->json('metadata')->nullable();
         $table->timestamps();
 

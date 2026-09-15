@@ -23,6 +23,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $chunk_index
  * @property string $content_hash
  * @property array<int, float>|null $embedding
+ * @property string|null $embedding_provider
+ * @property string|null $embedding_model
+ * @property int|null $embedding_dimensions
+ * @property string|null $embedding_hash
  * @property array<string, mixed>|null $metadata
  */
 class RagChunk extends Model

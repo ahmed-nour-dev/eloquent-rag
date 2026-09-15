@@ -207,12 +207,20 @@ final class RagSynchronizer
                 ->map(fn (RagChunk $chunk): string => $chunkTexts[$chunk->chunk_index] ?? '')
                 ->all();
 
+            $provider = config('eloquent-rag.embedding.provider');
+            $model = (string) config('eloquent-rag.embedding.model');
+            $dimensions = (int) config('eloquent-rag.embedding.dimensions');
+
+            // The raw (possibly-null) provider config still goes to
+            // generate() unchanged — laravel/ai resolves a null provider to
+            // its own configured default internally. What gets *stored* as
+            // provenance below is the resolved value, so embedding_provider
+            // is never a silent null on a written chunk.
+            $resolvedProvider = $provider ?? config('ai.default_for_embeddings');
+
             $response = Embeddings::for($inputs)
-                ->dimensions((int) config('eloquent-rag.embedding.dimensions'))
-                ->generate(
-                    config('eloquent-rag.embedding.provider'),
-                    config('eloquent-rag.embedding.model'),
-                );
+                ->dimensions($dimensions)
+                ->generate($provider, $model);
 
             foreach ($pendingChunks->values() as $index => $chunk) {
                 // A concurrent sync() can reconcile this exact chunk between
@@ -230,7 +238,13 @@ final class RagSynchronizer
                     ->where('id', $chunk->id)
                     ->where('content_hash', $chunk->content_hash)
                     ->first()
-                    ?->update(['embedding' => $response->embeddings[$index]]);
+                    ?->update([
+                        'embedding' => $response->embeddings[$index],
+                        'embedding_provider' => $resolvedProvider,
+                        'embedding_model' => $model,
+                        'embedding_dimensions' => $dimensions,
+                        'embedding_hash' => Hasher::embedding($chunk->content_hash, $resolvedProvider, $model, $dimensions),
+                    ]);
             }
         }
 
@@ -286,6 +300,10 @@ final class RagSynchronizer
             // embedding IS NULL) would otherwise never regenerate.
             if ($existingChunk !== null && ($configurationChanged || $existingChunk->content_hash !== $contentHash)) {
                 $values['embedding'] = null;
+                $values['embedding_provider'] = null;
+                $values['embedding_model'] = null;
+                $values['embedding_dimensions'] = null;
+                $values['embedding_hash'] = null;
             }
 
             $document->chunks()->updateOrCreate(
