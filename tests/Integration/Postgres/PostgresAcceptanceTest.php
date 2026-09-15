@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Ahmednour\EloquentRag\Exceptions\InvalidEmbeddingResponse;
 use Ahmednour\EloquentRag\Models\RagChunk;
 use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
@@ -131,6 +132,59 @@ it('regenerates chunk embeddings via embed() after an embedding model change inv
     expect($chunk->fresh()->embedding_model)->toBe('text-embedding-3-large');
     expect($chunk->fresh()->embedding_hash)->not->toBe($originalEmbeddingHash);
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->model === 'text-embedding-3-large');
+});
+
+it('throws InvalidEmbeddingResponse and persists nothing when the provider returns the wrong number of embeddings', function () {
+    // Regression test for issue #42: laravel/ai only validates the
+    // embeddings-count-matches-inputs invariant on its individual-caching
+    // path (EmbeddingsCountMismatchException), so a plain generate() call
+    // — what embed() actually uses — can return a short/long response with
+    // nothing upstream catching it. Faking 2 embeddings back for the
+    // single-chunk product below reproduces that mismatch.
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $product = createSyncedPostgresProduct();
+
+    Embeddings::fake([[
+        array_fill(0, $vectorDimensions, 0.1),
+        array_fill(0, $vectorDimensions, 0.2),
+    ]]);
+
+    expect(fn () => $product->rag()->embed())->toThrow(InvalidEmbeddingResponse::class);
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    expect($chunk->embedding)->toBeNull();
+
+    $document = RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->firstOrFail();
+    expect($document->status)->toBe('pending');
+});
+
+it('throws InvalidEmbeddingResponse and persists nothing when a returned embedding does not match the configured dimensions', function () {
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $product = createSyncedPostgresProduct();
+
+    Embeddings::fake([[
+        array_fill(0, $vectorDimensions - 1, 0.1),
+    ]]);
+
+    expect(fn () => $product->rag()->embed())->toThrow(InvalidEmbeddingResponse::class);
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    expect($chunk->embedding)->toBeNull();
+
+    $document = RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->firstOrFail();
+    expect($document->status)->toBe('pending');
 });
 
 it('invalidates and regenerates a chunk embedding via sync() -> embed() when the underlying content genuinely changes', function () {

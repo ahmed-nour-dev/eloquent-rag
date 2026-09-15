@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Exceptions\InvalidEmbeddingResponse;
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
 use Ahmednour\EloquentRag\Jobs\ForgetRagDocument;
 use Ahmednour\EloquentRag\Jobs\SyncRagDocument;
@@ -184,6 +185,7 @@ final class RagSynchronizer
      * still current.
      *
      * @throws UnsupportedVectorBackend
+     * @throws InvalidEmbeddingResponse
      */
     public function embed(): void
     {
@@ -223,6 +225,23 @@ final class RagSynchronizer
             $response = Embeddings::for($inputs)
                 ->dimensions($dimensions)
                 ->generate($provider, $model);
+
+            // laravel/ai does not guarantee this positionally on every code
+            // path (its own count check only fires under individual
+            // caching — see InvalidEmbeddingResponse's docblock). Validate
+            // before touching the database: a short/long response would
+            // otherwise misalign $response->embeddings[$index] against
+            // $pendingChunks below, and a wrong-width vector would get
+            // persisted as-is into a fixed-width vector column.
+            if (count($response->embeddings) !== count($inputs)) {
+                throw InvalidEmbeddingResponse::countMismatch(count($inputs), count($response->embeddings));
+            }
+
+            foreach ($response->embeddings as $index => $embedding) {
+                if (count($embedding) !== $dimensions) {
+                    throw InvalidEmbeddingResponse::dimensionMismatch($index, $dimensions, count($embedding));
+                }
+            }
 
             foreach ($pendingChunks->values() as $index => $chunk) {
                 // A concurrent sync() can reconcile this exact chunk between
