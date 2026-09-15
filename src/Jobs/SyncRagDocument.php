@@ -28,10 +28,40 @@ use Throwable;
  * pairs — or send already-succeeded pairs back through on Laravel's retry.
  * The failure is recorded onto that document row instead, the same place
  * rag:doctor already looks for sync failures.
+ *
+ * Retry/timeout policy (issue #55): every per-pair failure that sync()
+ * itself can produce is already caught and recorded above — it never
+ * reaches Laravel's retry machinery. What $tries/$backoff below actually
+ * guard against is the batch failing as a whole *outside* that loop (a
+ * dropped DB connection, a deadlock) before or between pairs. That's an
+ * infrastructure hiccup, not a bad document, so a few retries with a short
+ * growing delay are worth it — and safe to repeat, since sync() re-checks
+ * each pair's content/configuration hash and no-ops on ones a prior,
+ * partially-completed attempt already finished. $timeout bounds a single
+ * attempt at this job's largest batch (config('eloquent-rag.queue.batch_size'),
+ * default 500) well above its normal cost, so a genuinely stuck job is
+ * killed and retried rather than parking a worker on it indefinitely.
+ *
+ * Deliberately NOT ShouldBeUnique: this job's dedup story is handled
+ * upstream, at resolution time, by ADR-0005's debounce lock — not by the
+ * queue. A queue-native unique-job constraint operates on *dispatch*, so it
+ * would risk dropping a legitimately newer batch (e.g. RagSynchronizer::
+ * queue()'s single-model dispatch landing right after a fan-out batch
+ * already queued the same model) just because an older, still-pending
+ * batch for an overlapping key hasn't run yet — exactly the
+ * supersede-not-drop hazard called out in #55. sync()'s own idempotency
+ * already makes any genuine duplicate dispatch wasteful, never incorrect.
  */
 final class SyncRagDocument implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 3;
+
+    /** @var list<int> */
+    public array $backoff = [10, 60];
+
+    public int $timeout = 120;
 
     /**
      * @param  list<array{model_type: string, model_id: int|string}>  $pairs

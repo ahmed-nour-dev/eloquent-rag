@@ -19,10 +19,27 @@ use Illuminate\Queue\SerializesModels;
  * underlying model row is already gone, so — like rag:forget
  * (RagForgetCommand) — it deletes by (model_type, model_id) directly
  * against rag_documents rather than trying to re-resolve a model instance.
+ *
+ * Retry/timeout policy (issue #55): a delete-by-key batch has the same
+ * infrastructure-failure profile as SyncRagDocument (see its docblock) but
+ * is lighter per pair, hence the smaller $timeout. It's just as safe to
+ * retry — `?->delete()` on a pair a prior attempt already removed is a
+ * no-op, not an error — so the same bounded-retry-with-backoff reasoning
+ * applies, and the same ShouldBeUnique decision: not implemented, so a
+ * forget dispatched for a since-recreated model can't be silently dropped
+ * by a queue-level dedup key colliding with an unrelated, still-pending
+ * dispatch for that same (model_type, model_id) pair.
  */
 final class ForgetRagDocument implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 3;
+
+    /** @var list<int> */
+    public array $backoff = [10, 60];
+
+    public int $timeout = 60;
 
     /**
      * @param  list<array{model_type: string, model_id: int|string}>  $pairs

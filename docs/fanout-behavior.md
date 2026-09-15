@@ -48,6 +48,31 @@ reduce `debounce_seconds` for your workload.
   only the *resolution and dispatch* that's batched, not a promise that
   every dispatched document actually gets rewritten.
 
+## Retry, timeout, and uniqueness policy
+
+`SyncRagDocument` and `ForgetRagDocument` both declare an explicit
+`$tries = 3` with a `$backoff` of `[10, 60]` seconds, rather than inheriting
+whatever your queue connection's own defaults happen to be.
+`SyncRagDocument`'s `$timeout` is 120 seconds (sized for its largest batch,
+`config('eloquent-rag.queue.batch_size')`); `ForgetRagDocument`'s is 60
+seconds, since a delete-by-key batch is lighter per pair. These retries
+exist for infrastructure hiccups (a dropped DB connection, a deadlock)
+between or before pairs in a batch — a single pair's own `sync()` failure
+is already caught and recorded on that document's row instead (issue #54),
+never retried.
+
+Neither job is `ShouldBeUnique`. This is a deliberate decision, not an
+oversight: a model's own queued sync and a dependency fan-out that also
+covers it can land on the queue back-to-back, and a queue-level dedup key
+would risk silently dropping the newer of the two rather than letting both
+run — `sync()`'s content/configuration-hash short-circuit already makes a
+duplicate run cheap, not incorrect, so there's nothing to gain from
+deduplicating at the queue and a real way to lose correctness by doing so.
+Repeated dependency-triggered fan-out is already coalesced correctly, and
+earlier — before a batch is even built — by the debounce lock described
+above. See [ADR-0010](adr/0010-queue-retry-policy.md) for the full
+reasoning.
+
 ## The mass-update and pivot limitations
 
 **These are the two most important gotchas in the whole package — read
