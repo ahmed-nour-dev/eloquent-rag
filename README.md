@@ -11,16 +11,17 @@ The Eloquent synchronization layer for Laravel AI's RAG stack.
 
 All five phases of the build plan are complete: dependency-graph spike,
 document/chunk model, Eloquent lifecycle, Laravel AI integration, CLI &
-operability, and release readiness. The `ahmednour/eloquent-rag` name is
-confirmed available on both Packagist and GitHub, but **the package is not
-yet published** — there's no tagged release yet. CI (see
-[.github/workflows/tests.yml](.github/workflows/tests.yml)) runs the
+operability, and release readiness. **`v0.1.0-beta.1`** is tagged and
+published on [Packagist](https://packagist.org/packages/ahmednour/eloquent-rag).
+CI (see [.github/workflows/tests.yml](.github/workflows/tests.yml)) runs the
 acceptance suites against real MariaDB 11.7 and PostgreSQL+pgvector service
 containers across the supported PHP/Laravel matrix, with a guard that fails
 the build if either suite silently skips; see
 [docs/benchmarks.md](docs/benchmarks.md) and the acceptance tests under
-`tests/Integration/` for exactly what that does and doesn't prove. Don't
-depend on this in production until a tagged release exists.
+`tests/Integration/` for exactly what that does and doesn't prove. It's
+tagged as a beta: correctness-critical paths are implemented and covered by
+unit/feature tests plus the real-backend acceptance suites, but the package
+has no production usage history yet, so treat it accordingly.
 
 ## Requirements
 
@@ -41,9 +42,9 @@ decision record.
 composer require ahmednour/eloquent-rag
 ```
 
-*(Not yet published to Packagist — the name is confirmed available, but
-there's no tagged release yet. See [docs/installation.md](docs/installation.md)
-for the full setup once one exists.)*
+*(Published on Packagist as of `v0.1.0-beta.1` — a beta with no production
+usage history yet. See [docs/installation.md](docs/installation.md) for the
+full setup.)*
 
 ## Documentation
 
