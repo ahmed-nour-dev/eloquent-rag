@@ -116,6 +116,18 @@ final class RagSearch
             return (new $this->modelClass)->newCollection();
         }
 
+        // Deliberately $this->modelClass::query() — the searched model's
+        // own Eloquent connection — not DB::connection($this->connectionName)
+        // (the resolved RAG connection used for ranking above). These two
+        // can differ by design: config('eloquent-rag.connection') can
+        // centralize the RAG index on one connection while indexed models
+        // still live on their own (e.g. per-tenant) connections. Owner rows
+        // only ever exist on the model's own connection, so hydration must
+        // always read them from there regardless of where the RAG index
+        // itself lives — see
+        // docs/installation.md#search-hydration-when-the-two-connections-differ
+        // and the cross-connection case in tests/Integration/*/*AcceptanceTest.php
+        // (issue #46).
         $models = $this->modelClass::query()->whereIn(
             (new $this->modelClass)->getKeyName(),
             $orderedIds->all(),

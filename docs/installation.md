@@ -104,6 +104,22 @@ connection each indexed model itself uses, set `connection` in
 'connection' => 'central',
 ```
 
+#### Search hydration when the two connections differ
+
+`->searchRag()`/`RagSearch::search()` always ranks against the resolved RAG
+connection (`central` above, or the model's own connection when no override
+is set) but hydrates the final results via the searched model's own
+Eloquent connection — i.e. `Product::query()`, using whatever connection
+`Product` itself declares (or the app default, if none). This is
+intentional, not a bug: a shared, centralized RAG index over per-connection
+(e.g. per-tenant) owner data is a supported configuration, and the owner
+rows it ranks are only ever readable on their own connection in the first
+place. Concretely, with the config above and a `Product` pinned to
+`protected $connection = 'tenant';`, a search ranks chunks on `central` and
+then reads the matching `Product` rows from `tenant` — never from
+`central`. This holds regardless of whether the two connections happen to
+coincide.
+
 ### Dependency invalidation
 
 A dependency (a related model declared via `->relation()` in a
