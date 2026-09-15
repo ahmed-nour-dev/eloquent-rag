@@ -13,12 +13,14 @@ All five phases of the build plan are complete: dependency-graph spike,
 document/chunk model, Eloquent lifecycle, Laravel AI integration, CLI &
 operability, and release readiness. The `ahmednour/eloquent-rag` name is
 confirmed available on both Packagist and GitHub, but **the package is not
-yet published** — there's no tagged release and no CI run against a real
-MariaDB/PostgreSQL server yet (this was built and tested against SQLite in
-a sandbox with no real vector-capable database available; see
+yet published** — there's no tagged release yet. CI (see
+[.github/workflows/tests.yml](.github/workflows/tests.yml)) runs the
+acceptance suites against real MariaDB 11.7 and PostgreSQL+pgvector service
+containers across the supported PHP/Laravel matrix, with a guard that fails
+the build if either suite silently skips; see
 [docs/benchmarks.md](docs/benchmarks.md) and the acceptance tests under
-`tests/Integration/` for exactly what that does and doesn't prove). Don't
-depend on this in production until a real release exists.
+`tests/Integration/` for exactly what that does and doesn't prove. Don't
+depend on this in production until a tagged release exists.
 
 ## Requirements
 
