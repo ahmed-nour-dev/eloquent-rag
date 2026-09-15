@@ -272,6 +272,46 @@ it('drops a stale embedding write instead of persisting it when a concurrent syn
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
 });
 
+it('skips the provider call entirely when a concurrent sync() invalidates the document just before dispatching it (issue #56)', function () {
+    // Regression test for issue #56 — see MariaDbAcceptanceTest's copy of
+    // this test for the full rationale.
+    $product = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
+
+    $raced = false;
+
+    RagDocument::retrieved(function (RagDocument $retrieved) use ($product, &$raced): void {
+        if ($raced || $retrieved->model_id != $product->id) {
+            return;
+        }
+
+        $raced = true;
+
+        // See MariaDbAcceptanceTest's copy of this test: mutating a
+        // separately-loaded instance, not $product itself, keeps embed()'s
+        // own $this->model rendering the old content, matching how a real
+        // separate worker could never touch this process's already-loaded
+        // model.
+        $concurrent = Product::find($product->id);
+        $concurrent->update(['name' => 'Bluetooth Speaker Pro']);
+        $concurrent->fresh(['category', 'brand', 'features'])->rag()->sync();
+    });
+
+    $product->rag()->embed();
+
+    RagDocument::flushEventListeners();
+
+    Embeddings::assertNothingGenerated();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+    expect($chunk->embedding)->toBeNull();
+
+    $product->fresh(['category', 'brand', 'features'])->rag()->embed();
+    expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    Embeddings::assertGenerated(fn (): bool => true);
+});
+
 it('does not flip the document to synced against a stale snapshot when a concurrent sync() reconciles it mid-embed() (issue #41)', function () {
     // Regression test for issue #41 — see MariaDbAcceptanceTest's copy of
     // this test for the full rationale.
