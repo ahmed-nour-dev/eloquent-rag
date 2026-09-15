@@ -214,6 +214,57 @@ it('drops a stale embedding write instead of persisting it when a concurrent syn
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
 });
 
+it('does not flip the document to synced against a stale snapshot when a concurrent sync() reconciles it mid-embed() (issue #41)', function () {
+    // Regression test for issue #41 — see MariaDbAcceptanceTest's copy of
+    // this test for the full rationale.
+    $product = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
+
+    $raced = false;
+
+    RagDocument::retrieved(function (RagDocument $retrieved) use ($product, &$raced): void {
+        if ($raced || $retrieved->model_id != $product->id) {
+            return;
+        }
+
+        // Only fire once — the concurrent sync() dispatched below fetches
+        // this same document again while reconciling it, which must not
+        // re-enter this callback.
+        $raced = true;
+
+        // Simulate a concurrent sync() (another worker, dependency
+        // fan-out) landing right after embed() reads the document but
+        // before it finishes generating/writing the embedding — changing
+        // the rendered content and re-nulling the chunk's embedding
+        // underneath the in-flight embed() call.
+        $product->update(['name' => 'Bluetooth Speaker Pro']);
+        $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+    });
+
+    $product->rag()->embed();
+
+    RagDocument::flushEventListeners();
+
+    $document = RagDocument::query()->where('model_id', $product->id)->firstOrFail();
+
+    // embed() re-derives chunk text from the model on every call, so the
+    // chunk it picked up got embedded against the *current* (post-race)
+    // content, per the per-chunk content_hash gate (issue #29's fix) — the
+    // embedding itself is genuinely complete.
+    expect($document->chunks()->whereNull('embedding')->doesntExist())->toBeTrue();
+
+    // But the document-level status must NOT have flipped to 'synced':
+    // this embed() call started from a content_hash/configuration_hash
+    // snapshot the concurrent sync() moved past, so the transition is
+    // correctly skipped instead of papering over a stale read — the
+    // 'pending' status the concurrent sync() itself set is left intact.
+    expect($document->status)->toBe('pending');
+
+    // A subsequent embed() call re-reads the now-current hashes and
+    // completes the transition normally.
+    $product->fresh(['category', 'brand', 'features'])->rag()->embed();
+    expect($document->fresh()->status)->toBe('synced');
+});
+
 it('performs a real sync -> embed -> search cycle against the vector column without error', function () {
     $match = createSyncedPostgresProduct('Bluetooth Speaker', 'SPK-001');
     $match->rag()->embed();
