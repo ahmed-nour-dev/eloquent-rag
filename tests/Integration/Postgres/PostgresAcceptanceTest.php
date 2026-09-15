@@ -73,6 +73,38 @@ it('round-trips a real embedding vector through the AsVector cast on a genuine v
     expect($reloaded->embedding)->toEqual($chunk->embedding);
 });
 
+it('records embedding provenance on the chunk when embed() writes a real vector', function () {
+    $product = createSyncedPostgresProduct();
+    $product->rag()->embed();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    expect($chunk->embedding_provider)->toBe(config('ai.default_for_embeddings'));
+    expect($chunk->embedding_model)->toBe(config('eloquent-rag.embedding.model'));
+    expect($chunk->embedding_dimensions)->toBe((int) config('eloquent-rag.embedding.dimensions'));
+    expect($chunk->embedding_hash)->toMatch('/^[a-f0-9]{64}$/');
+});
+
+it('resolves a null embedding.provider config to the real laravel/ai default for provenance instead of storing null', function () {
+    // eloquent-rag.embedding.provider is null by default, meaning "defer to
+    // laravel/ai's own default provider" — that raw null still reaches
+    // Embeddings::generate() unchanged, but embedding_provider must record
+    // the actual resolved provider so provenance is never a silent null.
+    expect(config('eloquent-rag.embedding.provider'))->toBeNull();
+    config(['ai.default_for_embeddings' => 'bedrock']);
+
+    $product = createSyncedPostgresProduct();
+    $product->rag()->embed();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+
+    expect($chunk->embedding_provider)->toBe('bedrock');
+});
+
 it('regenerates chunk embeddings via embed() after an embedding model change invalidates them', function () {
     $product = createSyncedPostgresProduct();
     $product->rag()->embed();
@@ -82,15 +114,22 @@ it('regenerates chunk embeddings via embed() after an embedding model change inv
         ->firstOrFail();
 
     expect($chunk->embedding)->not->toBeNull();
+    $originalEmbeddingHash = $chunk->embedding_hash;
 
     config(['eloquent-rag.embedding.model' => 'text-embedding-3-large']);
     $product->fresh(['category', 'brand', 'features'])->rag()->sync();
 
     expect($chunk->fresh()->embedding)->toBeNull();
+    expect($chunk->fresh()->embedding_provider)->toBeNull();
+    expect($chunk->fresh()->embedding_model)->toBeNull();
+    expect($chunk->fresh()->embedding_dimensions)->toBeNull();
+    expect($chunk->fresh()->embedding_hash)->toBeNull();
 
     $product->rag()->embed();
 
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    expect($chunk->fresh()->embedding_model)->toBe('text-embedding-3-large');
+    expect($chunk->fresh()->embedding_hash)->not->toBe($originalEmbeddingHash);
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->model === 'text-embedding-3-large');
 });
 
@@ -108,6 +147,7 @@ it('invalidates and regenerates a chunk embedding via sync() -> embed() when the
         ->firstOrFail();
     $originalEmbedding = $chunk->embedding;
     $originalHash = $chunk->content_hash;
+    $originalEmbeddingHash = $chunk->embedding_hash;
 
     expect($originalEmbedding)->not->toBeNull();
 
@@ -116,11 +156,15 @@ it('invalidates and regenerates a chunk embedding via sync() -> embed() when the
 
     expect($chunk->fresh()->content_hash)->not->toBe($originalHash);
     expect($chunk->fresh()->embedding)->toBeNull();
+    expect($chunk->fresh()->embedding_hash)->toBeNull();
 
     $product->rag()->embed();
 
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
     expect($chunk->fresh()->embedding)->not->toEqual($originalEmbedding);
+    // Same provider/model/dimensions as before, but a different embedding_hash
+    // — it's keyed to content_hash too, which genuinely changed here.
+    expect($chunk->fresh()->embedding_hash)->not->toBe($originalEmbeddingHash);
 });
 
 it('drops a stale embedding write instead of persisting it when a concurrent sync() reconciles the chunk mid-embed()', function () {
