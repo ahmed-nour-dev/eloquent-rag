@@ -287,6 +287,58 @@ it('drops a stale embedding write instead of persisting it when a concurrent syn
     expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
 });
 
+it('skips the provider call entirely when a concurrent sync() invalidates the document just before dispatching it (issue #56)', function () {
+    // Regression test for issue #56: the previous test above proves a stale
+    // *write* gets dropped, but by the time that per-chunk content_hash gate
+    // fires, embed() already paid for the provider round-trip — API latency,
+    // cost, and rate-limit consumption — for a response guaranteed to be
+    // discarded. embed() now re-checks the document's content_hash/
+    // configuration_hash immediately before dispatching that call, so a
+    // concurrent sync() landing before the call is even made skips it
+    // outright instead of just discarding its result afterwards.
+    $product = createSyncedMariaDbProduct('Bluetooth Speaker', 'SPK-001');
+
+    $raced = false;
+
+    RagDocument::retrieved(function (RagDocument $retrieved) use ($product, &$raced): void {
+        if ($raced || $retrieved->model_id != $product->id) {
+            return;
+        }
+
+        // Only fire once — the concurrent sync() dispatched below fetches
+        // this same document again while reconciling it, which must not
+        // re-enter this callback.
+        $raced = true;
+
+        // Simulate a concurrent sync() (another worker, dependency
+        // fan-out) landing right after embed() reads the document but
+        // before it dispatches the provider call — changing the rendered
+        // content and re-nulling the chunk's embedding underneath the
+        // in-flight embed() call.
+        $product->update(['name' => 'Bluetooth Speaker Pro']);
+        $product->fresh(['category', 'brand', 'features'])->rag()->sync();
+    });
+
+    $product->rag()->embed();
+
+    RagDocument::flushEventListeners();
+
+    // The provider was never called for the stale content — not just
+    // discarded afterwards.
+    Embeddings::assertNothingGenerated();
+
+    $chunk = RagChunk::query()
+        ->whereHas('document', fn ($query) => $query->where('model_id', $product->id))
+        ->firstOrFail();
+    expect($chunk->embedding)->toBeNull();
+
+    // A subsequent embed() call re-reads the now-current hashes and
+    // completes normally.
+    $product->fresh(['category', 'brand', 'features'])->rag()->embed();
+    expect($chunk->fresh()->embedding)->toBeArray()->toHaveCount(8);
+    Embeddings::assertGenerated(fn (): bool => true);
+});
+
 it('does not flip the document to synced against a stale snapshot when a concurrent sync() reconciles it mid-embed() (issue #41)', function () {
     // Regression test for issue #41: embed()'s final "no NULL embeddings
     // left" transition used to be a plain check-then-act

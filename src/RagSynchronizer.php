@@ -237,50 +237,68 @@ final class RagSynchronizer
                 // is never a silent null on a written chunk.
                 $resolvedProvider = $provider ?? config('ai.default_for_embeddings');
 
-                $response = Embeddings::for($inputs)
-                    ->dimensions($dimensions)
-                    ->generate($provider, $model);
+                // Cheap re-check immediately before paying for the provider call
+                // (network latency, cost, rate-limit consumption): a concurrent
+                // sync() can land between the read at the top of embed() and
+                // here, having already changed the document's rendered content
+                // out from under $chunkTexts/$inputs above. The per-chunk
+                // content_hash gate below already stops a stale response from
+                // being *persisted*, but by then the round-trip is spent for
+                // nothing — bail out here instead, before dispatching it, and
+                // let a later embed() pass pick these chunks up against the
+                // now-current content (see issue #56).
+                $stillCurrent = RagDocument::on($connectionName)
+                    ->where('id', $document->id)
+                    ->where('content_hash', $document->content_hash)
+                    ->where('configuration_hash', $document->configuration_hash)
+                    ->exists();
 
-                // laravel/ai does not guarantee this positionally on every code
-                // path (its own count check only fires under individual
-                // caching — see InvalidEmbeddingResponse's docblock). Validate
-                // before touching the database: a short/long response would
-                // otherwise misalign $response->embeddings[$index] against
-                // $embeddableChunks below, and a wrong-width vector would get
-                // persisted as-is into a fixed-width vector column.
-                if (count($response->embeddings) !== count($inputs)) {
-                    throw InvalidEmbeddingResponse::countMismatch(count($inputs), count($response->embeddings));
-                }
+                if ($stillCurrent) {
+                    $response = Embeddings::for($inputs)
+                        ->dimensions($dimensions)
+                        ->generate($provider, $model);
 
-                foreach ($response->embeddings as $index => $embedding) {
-                    if (count($embedding) !== $dimensions) {
-                        throw InvalidEmbeddingResponse::dimensionMismatch($index, $dimensions, count($embedding));
+                    // laravel/ai does not guarantee this positionally on every code
+                    // path (its own count check only fires under individual
+                    // caching — see InvalidEmbeddingResponse's docblock). Validate
+                    // before touching the database: a short/long response would
+                    // otherwise misalign $response->embeddings[$index] against
+                    // $embeddableChunks below, and a wrong-width vector would get
+                    // persisted as-is into a fixed-width vector column.
+                    if (count($response->embeddings) !== count($inputs)) {
+                        throw InvalidEmbeddingResponse::countMismatch(count($inputs), count($response->embeddings));
                     }
-                }
 
-                foreach ($embeddableChunks->values() as $index => $chunk) {
-                    // A concurrent sync() can reconcile this exact chunk between
-                    // the read above and this write, changing its content_hash
-                    // and re-nulling its embedding (reconcileChunks()). Re-fetch
-                    // gated on the content_hash $inputs was actually built from:
-                    // if it no longer matches, the row has moved on and writing
-                    // this embedding would pair a fresh content_hash with a
-                    // vector computed from stale text — something
-                    // whereNull('embedding') would never catch again. Update
-                    // through the fetched *model* rather than a query-builder
-                    // mass update so AsVector's cast still applies; a plain
-                    // array write bypasses it and MariaDB rejects the value.
-                    $document->chunks()
-                        ->where('id', $chunk->id)
-                        ->where('content_hash', $chunk->content_hash)
-                        ->first()
-                        ?->update([
-                            'embedding' => $response->embeddings[$index],
-                            'embedding_provider' => $resolvedProvider,
-                            'embedding_model' => $model,
-                            'embedding_dimensions' => $dimensions,
-                            'embedding_hash' => Hasher::embedding($chunk->content_hash, $resolvedProvider, $model, $dimensions),
-                        ]);
+                    foreach ($response->embeddings as $index => $embedding) {
+                        if (count($embedding) !== $dimensions) {
+                            throw InvalidEmbeddingResponse::dimensionMismatch($index, $dimensions, count($embedding));
+                        }
+                    }
+
+                    foreach ($embeddableChunks->values() as $index => $chunk) {
+                        // A concurrent sync() can reconcile this exact chunk between
+                        // the read above and this write, changing its content_hash
+                        // and re-nulling its embedding (reconcileChunks()). Re-fetch
+                        // gated on the content_hash $inputs was actually built from:
+                        // if it no longer matches, the row has moved on and writing
+                        // this embedding would pair a fresh content_hash with a
+                        // vector computed from stale text — something
+                        // whereNull('embedding') would never catch again. Update
+                        // through the fetched *model* rather than a query-builder
+                        // mass update so AsVector's cast still applies; a plain
+                        // array write bypasses it and MariaDB rejects the value.
+                        $document->chunks()
+                            ->where('id', $chunk->id)
+                            ->where('content_hash', $chunk->content_hash)
+                            ->first()
+                            ?->update([
+                                'embedding' => $response->embeddings[$index],
+                                'embedding_provider' => $resolvedProvider,
+                                'embedding_model' => $model,
+                                'embedding_dimensions' => $dimensions,
+                                'embedding_hash' => Hasher::embedding($chunk->content_hash, $resolvedProvider, $model, $dimensions),
+                            ]);
+                    }
                 }
             }
         }
