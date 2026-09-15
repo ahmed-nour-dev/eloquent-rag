@@ -9,11 +9,15 @@ use Ahmednour\EloquentRag\Models\RagDocument;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Brand;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Category;
 use Ahmednour\EloquentRag\Tests\Fixtures\Models\Product;
+use Ahmednour\EloquentRag\Tests\Fixtures\Models\Widget;
 use Ahmednour\EloquentRag\Tests\Integration\PostgresAcceptanceTestCase;
 use Ahmednour\EloquentRag\VectorBackendCapability;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Ai\Embeddings;
 
 /**
@@ -359,6 +363,44 @@ it('performs a real sync -> embed -> search cycle against the vector column with
     expect($results)->not->toBeEmpty();
     expect($results->first())->toBeInstanceOf(Product::class);
     expect($results->pluck('id')->all())->toEqualCanonicalizing([$match->id, $other->id]);
+});
+
+it("hydrates search results from the searched model's own connection, not the centralized eloquent-rag.connection, when they differ (issue #46)", function () {
+    // See MariaDbAcceptanceTest's copy of this test for the full rationale.
+    // eloquent-rag.connection centralizes RAG data onto the real
+    // pgsql_acceptance connection while Widget stays pinned to its own
+    // 'secondary' SQLite connection (see the fixture), which has no rag_*
+    // tables and which 'pgsql_acceptance' has no widgets table — a
+    // regression that hydrated from the resolved RAG connection instead of
+    // the model's own connection would fail here with a hard "relation
+    // \"widgets\" does not exist" error, not a silently wrong result.
+    config(['eloquent-rag.connection' => 'pgsql_acceptance']);
+
+    Config::set('database.connections.secondary', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+
+    Schema::connection('secondary')->create('widgets', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->timestamps();
+    });
+
+    $widget = Widget::create(['name' => 'Bluetooth Speaker']);
+    $widget->rag()->embed();
+
+    expect(
+        RagDocument::on('pgsql_acceptance')->where('model_type', Widget::class)->where('model_id', $widget->id)->exists()
+    )->toBeTrue();
+
+    $results = Widget::searchRag('bluetooth speaker', 5);
+
+    expect($results)->toBeInstanceOf(EloquentCollection::class);
+    expect($results->pluck('id')->all())->toBe([$widget->id]);
+    expect($results->pluck('name')->all())->toBe(['Bluetooth Speaker']);
 });
 
 it('ranks documents by their single best chunk, not by how many close chunks one document has', function () {
