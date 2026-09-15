@@ -187,7 +187,9 @@ final class RagSynchronizer
      */
     public function embed(): void
     {
-        VectorBackendCapability::ensureSupported($this->connectionName());
+        $connectionName = $this->connectionName();
+
+        VectorBackendCapability::ensureSupported($connectionName);
 
         $document = $this->findDocument();
 
@@ -248,9 +250,24 @@ final class RagSynchronizer
             }
         }
 
-        if ($document->chunks()->whereNull('embedding')->doesntExist()) {
-            $document->update(['status' => 'synced']);
-        }
+        // A plain check-then-act ($document->chunks()->whereNull(...)->doesntExist()
+        // followed by a separate update()) leaves a window for a concurrent
+        // sync() to null out a chunk's embedding between the two statements,
+        // flipping this document to 'synced' against a snapshot that no
+        // longer exists. Folding the "no NULL embeddings" check into the
+        // UPDATE's own WHERE (via whereDoesntHave, a NOT EXISTS subquery)
+        // makes it atomic, and gating on the content/configuration hashes
+        // this call started from means a sync() that changes the document's
+        // shape in between — whether it lands before or after this
+        // statement — can never be papered over by a stale "all NULL-free"
+        // read: either the hashes no longer match (no-op here) or they
+        // still match, in which case nothing relevant changed.
+        RagDocument::on($connectionName)
+            ->where('id', $document->id)
+            ->where('content_hash', $document->content_hash)
+            ->where('configuration_hash', $document->configuration_hash)
+            ->whereDoesntHave('chunks', fn ($query) => $query->whereNull('embedding'))
+            ->update(['status' => 'synced']);
     }
 
     private function findDocument(): ?RagDocument
