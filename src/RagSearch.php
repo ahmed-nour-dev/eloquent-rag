@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Exceptions\FallbackCandidateLimitExceeded;
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
+use Ahmednour\EloquentRag\Support\CosineDistance;
 use Ahmednour\EloquentRag\Support\RagConnectionResolver;
 use Closure;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -41,13 +43,16 @@ final class RagSearch
      * query before ranking — e.g. ->scope(fn ($q) => $q->where('rag_documents.status', 'synced')).
      *
      * $callback receives the chunk-level query builder mid-construction
-     * (see rankedModelIds()): the rag_chunks/rag_documents join and the
-     * fixed model_type/whereNotNull('embedding') predicates are already
-     * applied, and — when $minSimilarity is set — a
-     * whereVectorDistanceLessThan() predicate is still to come, followed by
-     * select('rag_documents.model_id') + selectVectorDistance(). The whole
-     * result is then wrapped via fromSub() and grouped/ordered by
-     * MIN(distance) per model_id in the outer query.
+     * (see filteredChunksQuery(), shared by both rankedModelIdsNative() and
+     * the ADR-0011 rankedModelIdsFallback()): the rag_chunks/rag_documents
+     * join and the fixed model_type/whereNotNull('embedding') predicates
+     * are already applied. On the native path, a whereVectorDistanceLessThan()
+     * predicate is still to come when $minSimilarity is set, followed by
+     * select('rag_documents.model_id') + selectVectorDistance(), and the
+     * whole result is wrapped via fromSub() and grouped/ordered by
+     * MIN(distance) per model_id in the outer query. On the fallback path,
+     * $minSimilarity and the per-document MIN(distance) are instead applied
+     * in PHP over the filtered rows.
      *
      * This makes scope() **filter-only**. Safe: `where`/`whereHas`-style
      * predicates against rag_chunks/rag_documents columns. Unsupported —
@@ -57,11 +62,11 @@ final class RagSearch
      *   defeat them, matching chunks that shouldn't be there. Wrap it
      *   instead: ->where(fn ($q) => $q->where(...)->orWhere(...)).
      * - `select()`/`addSelect()`, `groupBy()`, `orderBy()` — the select,
-     *   grouping, and ordering that make ranking work are applied by
-     *   rankedModelIds() itself, after this callback runs; changing them
-     *   here conflicts with (or duplicates) that.
-     * - `limit()`/`offset()` — the result limit is applied once, on the
-     *   outer aggregated query, not here.
+     *   grouping, and ordering that make ranking work are applied after
+     *   this callback runs; changing them here conflicts with (or
+     *   duplicates) that.
+     * - `limit()`/`offset()` — the result limit is applied once, after
+     *   ranking, not here.
      */
     public function scope(Closure $callback): self
     {
@@ -100,7 +105,7 @@ final class RagSearch
 
         $limit = min($limit, (int) config('eloquent-rag.search.max_limit'));
 
-        VectorBackendCapability::ensureSupported($this->connectionName);
+        $isNative = VectorBackendCapability::ensureUsable($this->connectionName);
 
         $vector = Embeddings::for([$query])
             ->dimensions((int) config('eloquent-rag.embedding.dimensions'))
@@ -110,7 +115,9 @@ final class RagSearch
             )
             ->first();
 
-        $orderedIds = $this->rankedModelIds($vector, $limit, $minSimilarity);
+        $orderedIds = $isNative
+            ? $this->rankedModelIdsNative($vector, $limit, $minSimilarity)
+            : $this->rankedModelIdsFallback($vector, $limit, $minSimilarity);
 
         if ($orderedIds->isEmpty()) {
             return (new $this->modelClass)->newCollection();
@@ -157,13 +164,9 @@ final class RagSearch
      * @param  float|null  $minSimilarity  See search()'s param doc.
      * @return Collection<int, int|string>
      */
-    private function rankedModelIds(array $vector, int $limit, ?float $minSimilarity = null): Collection
+    private function rankedModelIdsNative(array $vector, int $limit, ?float $minSimilarity = null): Collection
     {
-        $chunkDistances = DB::connection($this->connectionName)->table('rag_chunks')
-            ->join('rag_documents', 'rag_documents.id', '=', 'rag_chunks.document_id')
-            ->where('rag_documents.model_type', $this->modelClass)
-            ->whereNotNull('rag_chunks.embedding')
-            ->when($this->scope, fn (Builder $builder) => ($this->scope)($builder))
+        $chunkDistances = $this->filteredChunksQuery()
             ->when(
                 $minSimilarity !== null,
                 // A chunk that fails the floor shouldn't even count toward
@@ -183,5 +186,79 @@ final class RagSearch
             ->orderByRaw('MIN(ranked_chunks.distance) asc')
             ->limit($limit)
             ->pluck('ranked_chunks.model_id');
+    }
+
+    /**
+     * ADR-0011: computes cosine distance in PHP against every candidate
+     * chunk's stored embedding instead of Laravel's native vector query
+     * builder (unavailable on this connection). Mirrors
+     * rankedModelIdsNative()'s semantics exactly — same base filter
+     * (including scope()), same per-chunk minSimilarity floor applied
+     * before aggregation, same per-document MIN(distance) ranking — so
+     * the two paths are behaviorally interchangeable, just at very
+     * different scale.
+     *
+     * @param  array<int, float>  $vector
+     * @param  float|null  $minSimilarity  See search()'s param doc.
+     * @return Collection<int, int|string>
+     *
+     * @throws FallbackCandidateLimitExceeded
+     */
+    private function rankedModelIdsFallback(array $vector, int $limit, ?float $minSimilarity = null): Collection
+    {
+        $filtered = $this->filteredChunksQuery();
+
+        $maxCandidates = (int) config('eloquent-rag.fallback.max_candidate_chunks');
+        $candidateCount = (clone $filtered)->count();
+
+        if ($candidateCount > $maxCandidates) {
+            throw FallbackCandidateLimitExceeded::exceeded($candidateCount, $maxCandidates);
+        }
+
+        $bestDistanceByModelId = [];
+
+        $rows = (clone $filtered)->select('rag_documents.model_id', 'rag_chunks.embedding')->cursor();
+
+        foreach ($rows as $row) {
+            // DB::table() rows bypass RagChunk's AsVector Eloquent cast, so
+            // the JSON-encoded embedding this package's own storage layer
+            // already writes on non-native drivers is decoded manually here.
+            $embedding = json_decode((string) $row->embedding, true);
+
+            if (! is_array($embedding)) {
+                continue;
+            }
+
+            $distance = CosineDistance::between($vector, $embedding);
+
+            if ($minSimilarity !== null && (1 - $distance) < $minSimilarity) {
+                continue;
+            }
+
+            $modelId = $row->model_id;
+
+            if (! isset($bestDistanceByModelId[$modelId]) || $distance < $bestDistanceByModelId[$modelId]) {
+                $bestDistanceByModelId[$modelId] = $distance;
+            }
+        }
+
+        asort($bestDistanceByModelId);
+
+        return collect($bestDistanceByModelId)->keys()->take($limit)->values();
+    }
+
+    /**
+     * The base rag_chunks/rag_documents filter shared by both ranking
+     * paths — model_type, non-null embeddings, and the caller's scope()
+     * callback — before either the native vector-builder select/order or
+     * the fallback's PHP-side comparison is layered on top.
+     */
+    private function filteredChunksQuery(): Builder
+    {
+        return DB::connection($this->connectionName)->table('rag_chunks')
+            ->join('rag_documents', 'rag_documents.id', '=', 'rag_chunks.document_id')
+            ->where('rag_documents.model_type', $this->modelClass)
+            ->whereNotNull('rag_chunks.embedding')
+            ->when($this->scope, fn (Builder $builder) => ($this->scope)($builder));
     }
 }

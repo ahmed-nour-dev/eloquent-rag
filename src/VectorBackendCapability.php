@@ -29,6 +29,36 @@ final class VectorBackendCapability
     public const MARIADB_FLOOR = '11.7.0';
 
     /**
+     * Like ensureSupported(), but returns false instead of throwing when
+     * the connection isn't natively supported AND the opt-in PHP-side
+     * fallback (ADR-0011) is enabled and eligible — the caller then knows
+     * to route through the fallback comparison path (RagSearch) instead
+     * of Laravel's native vector query builder. Still throws in every
+     * other case (fallback disabled, or the failure is a fixable
+     * misconfiguration of an otherwise-supported backend — see
+     * UnsupportedVectorBackend::$fallbackEligible), so a truly unusable
+     * connection fails exactly as ensureSupported() always has.
+     *
+     * @return bool true = native vector backend, false = fallback engaged
+     *
+     * @throws UnsupportedVectorBackend
+     */
+    public static function ensureUsable(?string $connectionName = null): bool
+    {
+        try {
+            self::ensureSupported($connectionName);
+
+            return true;
+        } catch (UnsupportedVectorBackend $e) {
+            if ($e->fallbackEligible && (bool) config('eloquent-rag.fallback.enabled')) {
+                return false;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * @throws UnsupportedVectorBackend
      */
     public static function ensureSupported(?string $connectionName = null): void

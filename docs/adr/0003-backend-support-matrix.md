@@ -38,7 +38,14 @@ package's integration suite.
   8.x "work anyway" — that would violate the non-goal against reimplementing
   vector search (see [ADR-0001](0001-package-boundary.md)) and would produce
   a degraded, unscalable experience the package doesn't want to be
-  responsible for supporting.
+  responsible for supporting. **Amended by
+  [ADR-0011](0011-portable-fallback-backend.md):** an opt-in, off-by-default
+  PHP-side fallback now exists for drivers with no native vector backend at
+  all (SQLite, plain MySQL), explicitly labeled as a development/
+  small-scale convenience and never enabled by default. It does not apply
+  to a fixable misconfiguration of a *supported* backend (MariaDB below the
+  11.7 floor, Postgres missing pgvector), which still hard-fails exactly as
+  this ADR originally specified.
 - A user on unsupported infrastructure (MySQL, or MariaDB/Laravel below the
   floor) must get a clear, actionable failure at `rag:doctor` / boot time —
   never a confusing SQL error surfaced mid-queue-job. This is Phase 4's

@@ -101,4 +101,35 @@ return [
     | own connections. See docs/installation.md#custom-database-connections.
     */
     'connection' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Portable fallback backend (opt-in, dev/small-scale — see ADR-0011)
+    |--------------------------------------------------------------------------
+    |
+    | Off by default: nothing about this package's behavior changes unless
+    | you explicitly opt in. When `enabled` is true, embed()/search() no
+    | longer refuse to run on a connection ADR-0003 doesn't natively
+    | support (SQLite, or plain/unconfigured MySQL) — RagSearch instead
+    | ranks chunks by computing cosine similarity in PHP against every
+    | candidate chunk's already-stored embedding. Storage is unaffected;
+    | AsVector already JSON-encodes the embedding column on these drivers.
+    |
+    | This does NOT extend to a genuinely misconfigured *supported*
+    | backend (MariaDB below the 11.7 floor, Postgres missing pgvector) —
+    | those still hard-fail, since the fix there is to upgrade/enable the
+    | extension, not to silently degrade.
+    |
+    | This path has no index and no query-plan optimizer: every matching
+    | chunk for the searched model type is pulled into PHP and compared
+    | one at a time. `max_candidate_chunks` is a hard ceiling on how many
+    | chunks a single search() call will scan before refusing to run
+    | (rather than silently getting slower as data grows) — raise it only
+    | if you understand the cost, and never rely on this path at
+    | production scale. See docs/backend-support.md#fallback-backend.
+    */
+    'fallback' => [
+        'enabled' => false,
+        'max_candidate_chunks' => 5000,
+    ],
 ];

@@ -22,6 +22,22 @@ it('fails with a non-zero exit code and a clear message on the unsupported SQLit
         ->assertExitCode(1);
 });
 
+/**
+ * ADR-0011: once the opt-in fallback is enabled, the same SQLite
+ * connection that fails above must instead report a WARN and a
+ * successful (zero) exit code — a fallback engaging is operational
+ * hygiene information, not a blocking problem.
+ */
+it('reports the opt-in fallback as a WARN with a zero exit code, not a FAIL', function () {
+    config(['eloquent-rag.fallback.enabled' => true]);
+
+    $this->artisan('rag:doctor')
+        ->expectsOutputToContain('[WARN]')
+        ->expectsOutputToContain('fallback')
+        ->doesntExpectOutputToContain('[FAIL]')
+        ->assertExitCode(0);
+});
+
 it('reports failed documents with their last_error as a WARN, not silently', function () {
     $category = Category::create(['name' => 'Electronics']);
     $brand = Brand::create(['name' => 'Acme']);

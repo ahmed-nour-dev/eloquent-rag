@@ -29,10 +29,13 @@ has no production usage history yet, so treat it accordingly.
 |---|---|---|
 | MariaDB 11.7+ | ✅ | Laravel **13.29+** (vector query builder API) |
 | PostgreSQL + pgvector | ✅ | Laravel 13.x |
-| Plain MySQL 8.x | ❌ | No native vector backend — not supported |
+| Plain MySQL 8.x | ❌ (opt-in fallback available) | No native vector backend — not supported for production |
 
 See [docs/backend-support.md](docs/backend-support.md) for the full
-picture (including why the check is stricter than Laravel's own) or
+picture (including why the check is stricter than Laravel's own), the
+[opt-in PHP-side fallback](docs/backend-support.md#fallback-backend-opt-in-devsmall-scale)
+for SQLite/plain MySQL dev and small-scale use
+([ADR-0011](docs/adr/0011-portable-fallback-backend.md)), or
 [ADR-0003](docs/adr/0003-backend-support-matrix.md) for the original
 decision record.
 
