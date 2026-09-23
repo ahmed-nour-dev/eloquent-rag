@@ -37,7 +37,12 @@ This is the verbatim principle for the README:
 ## Consequences
 
 - No custom `EmbeddingProvider` or `VectorStore` abstraction is ever
-  introduced (see `docs/principles.md` non-goals).
+  introduced (see `docs/principles.md` non-goals). **Amended by
+  [ADR-0011](0011-portable-fallback-backend.md):** a narrow, opt-in,
+  off-by-default PHP-side comparison path now exists for connections with
+  no native vector backend at all (SQLite, plain MySQL) — explicitly
+  scoped to development/small-scale use, not a general-purpose
+  `VectorStore` abstraction and not for production.
 - If Laravel AI or Laravel's vector API is insufficient for something this
   package needs, the fix is to contribute upstream — not to build a parallel
   abstraction here.

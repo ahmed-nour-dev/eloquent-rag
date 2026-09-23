@@ -18,6 +18,11 @@ rebuild tooling, it doesn't belong here — see [ADR-0001](adr/0001-package-boun
   storage and search.
 - **No PHP-side cosine similarity fallback for MySQL.** Unsupported backends
   stay unsupported — see [ADR-0003](adr/0003-backend-support-matrix.md).
+  **Amended by [ADR-0011](adr/0011-portable-fallback-backend.md):** an
+  opt-in, off-by-default fallback now exists for drivers with no native
+  vector backend at all (SQLite, plain MySQL), scoped to development/
+  small-scale use only — never enabled by default, and not a substitute
+  for a supported backend in production.
 - **No automatic/magical Eloquent relationship discovery.** Dependencies are
   declarative, always — see [ADR-0002](adr/0002-declarative-dependency-registry.md).
 - **No agent framework, chat UI, or prompt management.** Out of scope,
@@ -38,3 +43,7 @@ package is built on:
 - [ADR-0005](adr/0005-fanout-policy.md) — Fan-out policy
 - [ADR-0006](adr/0006-transaction-queue-boundary.md) — Transaction/queue boundary
 - [ADR-0007](adr/0007-pivot-change-detection.md) — Pivot change detection
+- [ADR-0008](adr/0008-vector-indexing-strategy.md) — Vector indexing strategy
+- [ADR-0009](adr/0009-tokenizer-abstraction.md) — Tokenizer abstraction
+- [ADR-0010](adr/0010-queue-retry-policy.md) — Queue retry/backoff/timeout/uniqueness policy
+- [ADR-0011](adr/0011-portable-fallback-backend.md) — Opt-in PHP-side fallback backend for SQLite/plain MySQL

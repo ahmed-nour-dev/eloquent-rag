@@ -40,20 +40,18 @@ class RagDoctorCommand extends Command
             $hasFailure = true;
         }
 
-        $backendSupported = $this->checkVectorBackend();
+        $backendMode = $this->checkVectorBackend();
 
-        if (! $backendSupported) {
+        if ($backendMode === null) {
             $hasFailure = true;
-        }
-
-        if ($backendSupported) {
+        } elseif ($backendMode === 'native') {
             if (! $this->checkDimensionMatch()) {
                 $hasFailure = true;
             }
 
             $this->checkVectorIndex();
         } else {
-            $this->line('  (skipping dimension and vector index checks — no supported vector backend)');
+            $this->line('  (skipping dimension and vector index checks — not applicable to the ADR-0011 PHP-side fallback, which uses a plain text column with no native vector type or index)');
         }
 
         $this->checkQueueDriver();
@@ -90,19 +88,31 @@ class RagDoctorCommand extends Command
         return false;
     }
 
-    private function checkVectorBackend(): bool
+    /**
+     * @return string|null 'native' (a supported vector backend), 'fallback'
+     *                     (the ADR-0011 opt-in PHP-side path engaged), or
+     *                     null (genuinely unusable — drives the FAIL exit
+     *                     code).
+     */
+    private function checkVectorBackend(): ?string
     {
         try {
-            VectorBackendCapability::ensureSupported($this->connection);
+            $native = VectorBackendCapability::ensureUsable($this->connection);
         } catch (UnsupportedVectorBackend $e) {
             $this->error("[FAIL] {$e->getMessage()}");
 
-            return false;
+            return null;
         }
 
-        $this->info('[PASS] Database connection is a supported vector backend (MariaDB 11.7+ or PostgreSQL+pgvector).');
+        if ($native) {
+            $this->info('[PASS] Database connection is a supported vector backend (MariaDB 11.7+ or PostgreSQL+pgvector).');
 
-        return true;
+            return 'native';
+        }
+
+        $this->warn("[WARN] No native vector backend on this connection — using the opt-in PHP-side fallback (config('eloquent-rag.fallback.enabled') = true, ADR-0011). This fallback is for development/small-scale use only and is not recommended for production — see docs/backend-support.md#fallback-backend.");
+
+        return 'fallback';
     }
 
     private function checkDimensionMatch(): bool

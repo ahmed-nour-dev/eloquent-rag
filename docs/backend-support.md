@@ -12,14 +12,49 @@
 This package relies entirely on Laravel's own native vector query builder
 (`whereVectorDistanceLessThan`, `orderByVectorDistance`,
 `selectVectorDistance`) and native vector column type
-(`Blueprint::vector()`, the `AsVector` cast). It does not, and will not,
-implement a PHP-side fallback for unsupported backends — see
-[ADR-0001](adr/0001-package-boundary.md) and
+(`Blueprint::vector()`, the `AsVector` cast) for *production* vector
+search — see [ADR-0001](adr/0001-package-boundary.md) and
 [ADR-0003](adr/0003-backend-support-matrix.md). If your backend isn't in
-the table above, this package genuinely cannot help with vector search —
-it can still track dependencies and render documents (that part of the
-package works on any Eloquent-compatible connection, including SQLite),
-but `embed()` and search will refuse to run.
+the table above, this package doesn't do production-grade vector search
+for it — it can still track dependencies and render documents (that part
+of the package works on any Eloquent-compatible connection, including
+SQLite or plain MySQL) — but `embed()` and search will refuse to run,
+**unless** you opt into the development/small-scale fallback below.
+
+## Fallback backend (opt-in, dev/small-scale)
+
+Set `config('eloquent-rag.fallback.enabled')` to `true` (off by default)
+to let `embed()`/`searchRag()`/`Rag::search()` run against a connection
+with no native vector backend at all — SQLite, or plain/unconfigured
+MySQL. See [ADR-0011](adr/0011-portable-fallback-backend.md) for the full
+decision record.
+
+Storage doesn't change: `RagChunk::embedding` already JSON-encodes on
+these drivers via Laravel's `AsVector` cast. What changes is search
+ranking — instead of Laravel's native vector query builder,
+`RagSearch` pulls every candidate chunk for the searched model type
+(after any `scope()` filter) into PHP and computes cosine similarity
+against each one directly.
+
+This is explicitly **not** a substitute for a supported backend in
+production:
+
+- **No index.** Every search is a full scan of the candidate chunks —
+  there is no equivalent to pgvector's HNSW index or MariaDB's `VECTOR
+  INDEX` here.
+- **Bounded, not just slow.** `config('eloquent-rag.fallback.max_candidate_chunks')`
+  (default 5000) caps how many chunks a single `search()` call will scan.
+  Exceeding it throws `FallbackCandidateLimitExceeded` with an actionable
+  message — a clear failure instead of the fallback quietly getting slower
+  as your data grows. Raise the config value only if you understand the
+  cost of doing so.
+- **Narrowly scoped.** The fallback only engages for a driver with no
+  native vector backend at all. A genuinely misconfigured *supported*
+  backend — MariaDB below the 11.7 floor, or Postgres missing the
+  `pgvector` extension — still hard-fails exactly as before: the fix
+  there is to upgrade the server or run `CREATE EXTENSION vector`, not to
+  quietly fall back.
+- **`rag:doctor` reports it as `[WARN]`**, not `[PASS]` — see below.
 
 ## Why the check is stricter than Laravel's own
 
@@ -89,7 +124,7 @@ any infrastructure change (Laravel upgrade, database migration, changing
 | Check | Level | What it catches |
 |---|---|---|
 | Laravel version | FAIL | Below the 13.29 floor |
-| Vector backend | FAIL | Wrong driver, MariaDB below 11.7, or Postgres missing `pgvector` — the real checks above, not just Laravel's grammar flag |
+| Vector backend | FAIL, or WARN if the [opt-in fallback](#fallback-backend-opt-in-devsmall-scale) is enabled and engages | Wrong driver, MariaDB below 11.7, or Postgres missing `pgvector` — the real checks above, not just Laravel's grammar flag. MariaDB-below-floor and missing-`pgvector` always stay FAIL even with the fallback enabled — see ADR-0011 |
 | Embedding dimension | FAIL | `rag_chunks.embedding`'s actual declared vector size doesn't match `config('eloquent-rag.embedding.dimensions')` (skipped if the backend check above already failed) |
 | Vector index | WARN | No indexed vector search available on this connection — always on MariaDB (see [Vector indexing](#vector-indexing)), or on Postgres if the expected index is missing (skipped if the backend check above already failed) |
 | Queue driver | WARN | `queue.default` is `sync` — fan-out will run inline instead of batched, fine locally, not recommended in production |

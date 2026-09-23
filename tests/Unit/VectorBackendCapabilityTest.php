@@ -36,6 +36,29 @@ it('rejects the real SQLite test connection as an unsupported vector backend', f
 });
 
 /**
+ * ensureUsable() — ADR-0011. Also a real test against the SQLite
+ * connection: fallback.enabled defaults to false, so this must reject
+ * exactly like ensureSupported() above (regression guard for the default,
+ * unchanged behavior).
+ */
+it('still rejects the real SQLite connection via ensureUsable() when the fallback is disabled (the default)', function () {
+    expect(fn () => VectorBackendCapability::ensureUsable())
+        ->toThrow(UnsupportedVectorBackend::class);
+});
+
+it('returns false instead of throwing via ensureUsable() when the fallback is enabled', function () {
+    config(['eloquent-rag.fallback.enabled' => true]);
+
+    expect(VectorBackendCapability::ensureUsable())->toBeFalse();
+});
+
+it('marks unsupportedDriver() as fallback-eligible but the other two failure modes as not', function () {
+    expect(UnsupportedVectorBackend::unsupportedDriver('sqlite')->fallbackEligible)->toBeTrue();
+    expect(UnsupportedVectorBackend::mariaDbBelowFloor('10.6.23')->fallbackEligible)->toBeFalse();
+    expect(UnsupportedVectorBackend::pgvectorExtensionMissing()->fallbackEligible)->toBeFalse();
+});
+
+/**
  * parseVectorDimensions() is pure — fed literal type-description strings
  * shaped like MariaDB's information_schema.columns.COLUMN_TYPE or
  * Postgres's format_type() output (rag:doctor's dimension-mismatch check

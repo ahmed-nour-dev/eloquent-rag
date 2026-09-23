@@ -191,7 +191,12 @@ final class RagSynchronizer
     {
         $connectionName = $this->connectionName();
 
-        VectorBackendCapability::ensureSupported($connectionName);
+        // Return value unused: the write path below is already
+        // driver-agnostic (RagChunk's AsVector cast JSON-encodes on any
+        // non-native driver), so embed() only needs to know whether this
+        // connection is usable at all — native or ADR-0011 fallback —
+        // not which one.
+        VectorBackendCapability::ensureUsable($connectionName);
 
         $document = $this->findDocument();
 
