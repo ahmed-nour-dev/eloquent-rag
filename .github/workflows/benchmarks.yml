@@ -1,0 +1,137 @@
+name: benchmarks
+
+# Runs benchmarks/FanoutBenchmarkTest.php against the same real MariaDB
+# 11.7 and PostgreSQL+pgvector service containers tests.yml provisions, so
+# docs/benchmarks.md can publish real-backend numbers alongside the SQLite
+# baseline. Deliberately NOT on every push/PR: seeding 1,000,000 rows into a
+# real server takes minutes, and the numbers only need refreshing
+# occasionally. Each job appends a Markdown table to its run summary — copy
+# those rows into docs/benchmarks.md by hand (see that doc's methodology
+# section for why publishing is manual).
+
+on:
+  workflow_dispatch:
+    inputs:
+      scales:
+        description: "Comma-separated document counts to benchmark"
+        required: false
+        default: "10000,100000,1000000"
+  schedule:
+    # 04:17 UTC on the 1st of every month.
+    - cron: "17 4 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  mariadb:
+    name: "Fan-out benchmark / MariaDB 11.7"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      mariadb:
+        image: mariadb:11.7.2
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      RAG_BENCH_BACKEND: mariadb
+      RAG_BENCH_SCALES: ${{ github.event.inputs.scales || '10000,100000,1000000' }}
+      RAG_TEST_MARIADB_HOST: 127.0.0.1
+      RAG_TEST_MARIADB_PORT: 3306
+      RAG_TEST_MARIADB_DATABASE: testing
+      RAG_TEST_MARIADB_USERNAME: root
+      RAG_TEST_MARIADB_PASSWORD: root
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, pdo, pdo_mysql, pdo_sqlite, sqlite3
+          coverage: none
+          ini-values: memory_limit=-1
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Write report header
+        run: |
+          {
+            echo "### Fan-out benchmark — MariaDB 11.7 (GitHub-hosted ubuntu-latest runner)"
+            echo ""
+            echo "| Backend | Documents | Seed time | Reverse-lookup time | Batches dispatched | Resolve + dispatch time |"
+            echo "|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run benchmark
+        env:
+          RAG_BENCH_REPORT: ${{ runner.temp }}/report.md
+        run: |
+          vendor/bin/pest benchmarks/FanoutBenchmarkTest.php
+          cat "$RAG_BENCH_REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+  postgres:
+    name: "Fan-out benchmark / PostgreSQL+pgvector"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      RAG_BENCH_BACKEND: pgsql
+      RAG_BENCH_SCALES: ${{ github.event.inputs.scales || '10000,100000,1000000' }}
+      RAG_TEST_PGSQL_HOST: 127.0.0.1
+      RAG_TEST_PGSQL_PORT: 5432
+      RAG_TEST_PGSQL_DATABASE: testing
+      RAG_TEST_PGSQL_USERNAME: postgres
+      RAG_TEST_PGSQL_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, pdo, pdo_pgsql, pdo_sqlite, sqlite3
+          coverage: none
+          ini-values: memory_limit=-1
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Enable pgvector on the benchmark database
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d testing -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Write report header
+        run: |
+          {
+            echo "### Fan-out benchmark — PostgreSQL 16 + pgvector 0.8.6 (GitHub-hosted ubuntu-latest runner)"
+            echo ""
+            echo "| Backend | Documents | Seed time | Reverse-lookup time | Batches dispatched | Resolve + dispatch time |"
+            echo "|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run benchmark
+        env:
+          RAG_BENCH_REPORT: ${{ runner.temp }}/report.md
+        run: |
+          vendor/bin/pest benchmarks/FanoutBenchmarkTest.php
+          cat "$RAG_BENCH_REPORT" >> "$GITHUB_STEP_SUMMARY"
