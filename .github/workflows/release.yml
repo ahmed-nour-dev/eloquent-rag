@@ -1,0 +1,54 @@
+name: release
+
+# Publishes a GitHub release when a version tag (v1.2.3, v1.2.3-beta.1, ...)
+# is pushed, using that version's section of CHANGELOG.md as the release
+# notes. Tags with a pre-release suffix (anything after a "-") are published
+# as pre-releases. Packagist picks the tag itself up on its own.
+#
+# To cut a release: move CHANGELOG.md's "Unreleased" entries under a new
+# "## [X.Y.Z] - YYYY-MM-DD" heading on main, then
+#   git tag vX.Y.Z <commit> && git push origin vX.Y.Z
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## [${version}]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^\[[^]]+\]: / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ] || ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## [${version}]' section — add one before tagging."
+            exit 1
+          fi
+
+          cat release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            $prerelease

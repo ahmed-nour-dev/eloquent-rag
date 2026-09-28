@@ -8,6 +8,11 @@ called out below).
 
 ## [Unreleased]
 
+## [0.2.0-beta.1] - 2026-09-28
+
+Second beta. Not yet recommended for production: see
+[Status](https://github.com/ahmed-nour-dev/eloquent-rag#status) for what that means.
+
 ### Added
 
 - **Portable fallback backend** (opt-in, development/small data only):
@@ -42,9 +47,11 @@ called out below).
 
 ### Changed
 
+- **Breaking (minor):** `RagSynchronizer::sync()` returns `bool` (whether
+  the document was rewritten) instead of `void`. Code that only calls it is
+  unaffected; code that extends or type-checks its return value may need
+  updating.
 - `composer.json` now allows `laravel/ai` `^0.11.2 || ^1.0`. (#70)
-- `RagSynchronizer::sync()` returns `bool` (whether the document was
-  rewritten) instead of `void`.
 - The embedding-column migration no longer converts the column on plain
   MySQL, which has no usable `VECTOR` type; previously the migration failed
   there on MySQL 8.x. (#63)
@@ -66,5 +73,6 @@ search on MariaDB 11.7+ and PostgreSQL+pgvector, and the `rag:doctor`,
 `rag:status`, `rag:sync`, `rag:rebuild`, `rag:prune`, `rag:forget`, and
 `rag:dependencies` commands.
 
-[Unreleased]: https://github.com/ahmed-nour-dev/eloquent-rag/compare/v0.1.0-beta.1...HEAD
+[Unreleased]: https://github.com/ahmed-nour-dev/eloquent-rag/compare/v0.2.0-beta.1...HEAD
+[0.2.0-beta.1]: https://github.com/ahmed-nour-dev/eloquent-rag/compare/v0.1.0-beta.1...v0.2.0-beta.1
 [0.1.0-beta.1]: https://github.com/ahmed-nour-dev/eloquent-rag/releases/tag/v0.1.0-beta.1
