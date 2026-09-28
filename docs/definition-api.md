@@ -162,10 +162,46 @@ rather than merely ranked last — a query with no sufficiently close match
 can return fewer than `limit` results, or none. Omitting it (the default)
 preserves the original no-floor behavior.
 
+### Scores and matching chunks
+
+`searchRag()` returns bare models. For RAG proper — grounding an LLM
+answer, showing citations, or thresholding in your own code — ask for the
+score and the matching chunk too:
+
+```php
+$results = Product::searchRagWithScores('a bluetooth speaker', limit: 5);
+// or: Rag::searchWithScores(Product::class, 'a bluetooth speaker', limit: 5);
+
+foreach ($results as $result) {
+    $result->model;       // the hydrated Product
+    $result->score;       // cosine similarity, 1.0 = identical (same scale as minSimilarity)
+    $result->distance;    // cosine distance, i.e. 1 - score
+    $result->chunkIndex;  // which of the document's chunks matched best
+    $result->chunk();     // that chunk's text, or null (see below)
+}
+```
+
+The result is an `Illuminate\Support\Collection` of
+`Ahmednour\EloquentRag\RagSearchResult`, in the same order, with the same
+`limit`/`minSimilarity` semantics, as `searchRag()`. Each document is still
+scored by its single closest chunk; `chunkIndex` tells you which one.
+
+Chunk text is not stored in the database (only its hash is), so `chunk()`
+re-renders and re-chunks the model the same way `sync()` does, on first
+call, and memoizes the result. It returns `null` instead of guessing when
+the re-derived text's hash no longer matches the chunk that was actually
+embedded — the model changed after its last `sync()`/`embed()`, so the
+stored vector describes text that no longer exists. Calling it lazy-loads
+the relations your definition renders, so only call it for results you
+use.
+
 ### Scoping the query
 
 ```php
-Product::rag()->scope(fn ($q) => $q->where('rag_documents.status', 'synced'))
+use Ahmednour\EloquentRag\RagSearch;
+
+(new RagSearch(Product::class))
+    ->scope(fn ($q) => $q->where('rag_documents.status', 'synced'))
     ->search('a bluetooth speaker');
 ```
 

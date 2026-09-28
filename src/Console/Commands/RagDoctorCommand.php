@@ -40,13 +40,16 @@ class RagDoctorCommand extends Command
             $hasFailure = true;
         }
 
-        $backendSupported = $this->checkVectorBackend();
+        $usesFallback = VectorBackendCapability::usesPortableFallback($this->connection);
+        $backendSupported = $usesFallback ? $this->warnPortableFallback() : $this->checkVectorBackend();
 
         if (! $backendSupported) {
             $hasFailure = true;
         }
 
-        if ($backendSupported) {
+        if ($usesFallback) {
+            $this->line('  (skipping dimension and vector index checks — the portable fallback stores JSON in a plain text column)');
+        } elseif ($backendSupported) {
             if (! $this->checkDimensionMatch()) {
                 $hasFailure = true;
             }
@@ -101,6 +104,21 @@ class RagDoctorCommand extends Command
         }
 
         $this->info('[PASS] Database connection is a supported vector backend (MariaDB 11.7+ or PostgreSQL+pgvector).');
+
+        return true;
+    }
+
+    /**
+     * WARN, not FAIL: the operator explicitly opted into the portable
+     * fallback (ADR-0011), so embed()/search do work here — but it's a
+     * linear-scan, development/small-data path, and that should never go
+     * unnoticed on a production deploy.
+     */
+    private function warnPortableFallback(): bool
+    {
+        $driver = DB::connection($this->connection)->getDriverName();
+
+        $this->warn("[WARN] No native vector backend on this [{$driver}] connection — embed() and search are using the opt-in portable fallback (config('eloquent-rag.portable_fallback.enabled')): JSON embeddings ranked in PHP with a full scan per search. Fine for development and small data, NOT for production. See docs/backend-support.md#portable-fallback.");
 
         return true;
     }

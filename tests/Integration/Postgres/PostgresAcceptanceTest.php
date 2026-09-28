@@ -543,6 +543,60 @@ it('excludes a document whose best chunk falls below the minSimilarity floor, us
     expect($results->pluck('id')->all())->toBe([$match->id]);
 });
 
+it('returns each document score and best-matching chunk from searchRagWithScores() (issue #65)', function () {
+    $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
+    $unitVector = fn (int $onIndex, float $value = 1.0): array => array_replace(
+        array_fill(0, $vectorDimensions, 0.0),
+        [$onIndex => $value],
+    );
+
+    $bestMatch = createSyncedPostgresProduct('Best Match', 'DOC-A');
+    $secondBest = createSyncedPostgresProduct('Second Best', 'DOC-B');
+
+    $documentIdFor = fn (Product $product): int => RagDocument::query()
+        ->where('model_type', Product::class)
+        ->where('model_id', $product->id)
+        ->value('id');
+
+    // Document A: one orthogonal chunk and one identical chunk — its score
+    // must come from the identical one (chunk_index 101), not the first.
+    RagChunk::create([
+        'document_id' => $documentIdFor($bestMatch),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('a', 64),
+        'embedding' => $unitVector(1),
+    ]);
+    RagChunk::create([
+        'document_id' => $documentIdFor($bestMatch),
+        'chunk_index' => 101,
+        'content_hash' => str_repeat('b', 64),
+        'embedding' => $unitVector(0),
+    ]);
+
+    // Document B: a single orthogonal chunk — cosine similarity exactly 0.
+    RagChunk::create([
+        'document_id' => $documentIdFor($secondBest),
+        'chunk_index' => 100,
+        'content_hash' => str_repeat('c', 64),
+        'embedding' => $unitVector(1),
+    ]);
+
+    Embeddings::fake([[$unitVector(0)], [$unitVector(0)]]);
+
+    $results = Product::searchRagWithScores('anything', 2);
+
+    expect($results->map(fn ($result) => $result->model->getKey())->all())->toBe([$bestMatch->id, $secondBest->id]);
+    expect($results[0]->score)->toEqualWithDelta(1.0, 1e-6);
+    expect($results[0]->chunkIndex)->toBe(101);
+    expect($results[1]->score)->toEqualWithDelta(0.0, 1e-6);
+    expect($results[1]->chunkIndex)->toBe(100);
+
+    // These hand-inserted chunks have no counterpart in the model's real
+    // rendered text, so chunk() must refuse to guess rather than return
+    // unrelated text.
+    expect($results[0]->chunk())->toBeNull();
+});
+
 it('treats minSimilarity as an inclusive floor at the exact boundary', function () {
     $vectorDimensions = (int) config('eloquent-rag.embedding.dimensions');
     $unitVector = fn (int $onIndex, float $value = 1.0): array => array_replace(

@@ -179,7 +179,9 @@ final class RagSynchronizer
      * Deliberately NOT called from sync() — sync() stays exactly as
      * Phase 2 built it (pure structural reconciliation, works on any
      * driver including SQLite). embed() is the Phase 3 addition, and it
-     * requires a real vector-capable backend; call sync() first if source
+     * requires a real vector-capable backend (or the opt-in portable
+     * fallback — see VectorBackendCapability::usesPortableFallback());
+     * call sync() first if source
      * content may have changed, since chunk text isn't persisted and is
      * re-derived here assuming the currently-stored chunk_index values are
      * still current.
@@ -191,7 +193,7 @@ final class RagSynchronizer
     {
         $connectionName = $this->connectionName();
 
-        VectorBackendCapability::ensureSupported($connectionName);
+        VectorBackendCapability::ensureUsable($connectionName);
 
         $document = $this->findDocument();
 

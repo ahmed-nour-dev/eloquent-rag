@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ahmednour\EloquentRag;
 
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 
 final class Rag
 {
@@ -42,5 +43,19 @@ final class Rag
     public static function search(string $modelClass, string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
         return (new RagSearch($modelClass))->search($query, $limit, $minSimilarity);
+    }
+
+    /**
+     * Like search(), but returns one RagSearchResult per match — the
+     * hydrated model, its cosine similarity score, and its best-matching
+     * chunk — instead of bare models. Equivalent to
+     * `Product::searchRagWithScores($query, $limit)`.
+     *
+     * @param  class-string  $modelClass
+     * @return Collection<int, RagSearchResult>
+     */
+    public static function searchWithScores(string $modelClass, string $query, int $limit = 10, ?float $minSimilarity = null): Collection
+    {
+        return (new RagSearch($modelClass))->searchWithScores($query, $limit, $minSimilarity);
     }
 }

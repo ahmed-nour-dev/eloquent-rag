@@ -34,7 +34,10 @@ package's integration suite.
 
 ## Consequences
 
-- No PHP-side cosine-similarity fallback will ever be built to make MySQL
+- *(Amended by [ADR-0011](0011-portable-fallback-backend.md): an opt-in,
+  development/small-data-only portable fallback now exists. There is still
+  no supported production path on MySQL.)*
+  No PHP-side cosine-similarity fallback will ever be built to make MySQL
   8.x "work anyway" — that would violate the non-goal against reimplementing
   vector search (see [ADR-0001](0001-package-boundary.md)) and would produce
   a degraded, unscalable experience the package doesn't want to be

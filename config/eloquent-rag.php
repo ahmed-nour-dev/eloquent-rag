@@ -89,6 +89,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Portable fallback vector store (development / small data only)
+    |--------------------------------------------------------------------------
+    |
+    | Off by default. When enabled, embed() and search also work on SQLite
+    | and plain MySQL — connections with no native vector support — by
+    | storing each embedding as JSON text and ranking with cosine
+    | similarity computed in PHP. Every search reads EVERY embedded chunk
+    | of the searched model type into PHP, so cost grows linearly with your
+    | data: fine for local development, CI, demos, and a few thousand
+    | chunks, NOT a production vector store. Supported backends (MariaDB
+    | 11.7+, PostgreSQL+pgvector) always use native vector search whether
+    | or not this is enabled. See docs/backend-support.md#portable-fallback.
+    */
+    'portable_fallback' => [
+        'enabled' => (bool) env('RAG_PORTABLE_FALLBACK', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Connection
     |--------------------------------------------------------------------------
     |

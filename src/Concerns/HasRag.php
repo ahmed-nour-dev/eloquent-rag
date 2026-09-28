@@ -6,8 +6,10 @@ namespace Ahmednour\EloquentRag\Concerns;
 
 use Ahmednour\EloquentRag\RagDefinition;
 use Ahmednour\EloquentRag\RagSearch;
+use Ahmednour\EloquentRag\RagSearchResult;
 use Ahmednour\EloquentRag\RagSynchronizer;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 
 /**
  * Wires a model into the RAG sync lifecycle: created/updated/restored queue
@@ -68,6 +70,19 @@ trait HasRag
     public static function searchRag(string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
         return (new RagSearch(static::class))->search($query, $limit, $minSimilarity);
+    }
+
+    /**
+     * Like searchRag(), but returns one RagSearchResult per match — the
+     * hydrated model, its cosine similarity `score`, and its best-matching
+     * chunk (`chunkIndex`, `chunk()`) — for grounding an LLM answer or
+     * showing citations. See RagSearch::searchWithScores().
+     *
+     * @return Collection<int, RagSearchResult>
+     */
+    public static function searchRagWithScores(string $query, int $limit = 10, ?float $minSimilarity = null): Collection
+    {
+        return (new RagSearch(static::class))->searchWithScores($query, $limit, $minSimilarity);
     }
 
     protected static function bootHasRag(): void

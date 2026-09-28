@@ -43,6 +43,72 @@ final class VectorBackendCapability
         };
     }
 
+    /**
+     * Non-throwing form of ensureSupported().
+     */
+    public static function isSupported(?string $connectionName = null): bool
+    {
+        try {
+            self::ensureSupported($connectionName);
+        } catch (UnsupportedVectorBackend) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * True when embed()/search on this connection should use the opt-in
+     * portable fallback (JSON-encoded embeddings, cosine similarity in
+     * PHP) instead of the native vector query builder: the fallback is
+     * enabled via config('eloquent-rag.portable_fallback.enabled') AND the
+     * connection is one it can actually serve. A natively supported
+     * backend never uses the fallback, even when it's enabled.
+     */
+    public static function usesPortableFallback(?string $connectionName = null): bool
+    {
+        if (! config('eloquent-rag.portable_fallback.enabled', false)) {
+            return false;
+        }
+
+        return self::isPortableFallbackCandidate(DB::connection($connectionName));
+    }
+
+    /**
+     * The connections the portable fallback can serve: ones whose
+     * rag_chunks.embedding column stays a plain text column (see the
+     * convert_rag_chunks_embedding_to_vector_column migration) and whose
+     * grammar makes AsVector store plain JSON. That's SQLite and a real
+     * MySQL server. A below-floor MariaDB or a Postgres without pgvector
+     * is deliberately NOT a candidate: AsVector writes MariaDB vectors via
+     * vec_fromtext(), which a pre-11.7 server doesn't have, and the right
+     * fix for a Postgres missing pgvector is to install the extension.
+     */
+    public static function isPortableFallbackCandidate(Connection $connection): bool
+    {
+        return match ($connection->getDriverName()) {
+            'sqlite' => true,
+            'mysql' => ! ($connection instanceof MySqlConnection && $connection->isMaria()),
+            default => false,
+        };
+    }
+
+    /**
+     * The gate embed() and search run through: passes on a supported
+     * native backend or when the portable fallback applies, and otherwise
+     * throws exactly what ensureSupported() would.
+     *
+     * @throws UnsupportedVectorBackend
+     */
+    public static function ensureUsable(?string $connectionName = null): void
+    {
+        if (self::usesPortableFallback($connectionName)) {
+            return;
+        }
+
+        self::ensureSupported($connectionName);
+    }
+
     private static function ensureMariaDbSupported(Connection $connection): void
     {
         // Both the 'mysql' driver (connected to an actual MariaDB server,

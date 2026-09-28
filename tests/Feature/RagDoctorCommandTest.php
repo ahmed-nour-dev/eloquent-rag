@@ -39,3 +39,12 @@ it('reports failed documents with their last_error as a WARN, not silently', fun
         ->expectsOutputToContain('1 document(s) have status')
         ->expectsOutputToContain('boom: something broke');
 });
+
+it('reports the opt-in portable fallback as a WARN instead of failing the backend check', function () {
+    config(['eloquent-rag.portable_fallback.enabled' => true]);
+
+    $this->artisan('rag:doctor')
+        ->expectsOutputToContain('portable fallback')
+        ->doesntExpectOutputToContain('[FAIL]')
+        ->assertExitCode(0);
+});
