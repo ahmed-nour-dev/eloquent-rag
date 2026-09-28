@@ -96,12 +96,23 @@ dimensions, and queue setup before anything gets indexed. See
 
 ## Status
 
-Beta (`v0.1.0-beta.1` on
-[Packagist](https://packagist.org/packages/ahmednour/eloquent-rag)). The
-correctness-critical paths are covered by unit and feature tests plus
-acceptance suites that run in CI against real MariaDB 11.7 and
-PostgreSQL+pgvector servers across the supported PHP/Laravel matrix, but
-the package has no production usage history yet, so treat it accordingly.
+Beta (`v0.2.0-beta.1` on
+[Packagist](https://packagist.org/packages/ahmednour/eloquent-rag)), and
+**not yet recommended for production**. The correctness-critical paths are
+covered by unit and feature tests plus acceptance suites that run in CI
+against real MariaDB 11.7 and PostgreSQL+pgvector servers across the
+supported PHP/Laravel matrix. What's missing before a stable 1.0:
+
+- **Production usage history.** No deployment has run it under real
+  traffic yet. If you try it, start with a non-critical model and run
+  `php artisan rag:verify` on a schedule.
+- **Real-backend performance numbers.** Fan-out is benchmarked on SQLite
+  only so far; the MariaDB/PostgreSQL run is wired up but not published
+  (see [docs/benchmarks.md](docs/benchmarks.md)).
+- **API stability.** While pre-1.0, a minor release may contain breaking
+  changes (always called out in the changelog).
+
+The portable fallback is never meant for production, whatever the version.
 Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Documentation
