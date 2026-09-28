@@ -24,7 +24,7 @@
         "illuminate/database": "^13.29",
         "illuminate/queue": "^13.29",
         "illuminate/support": "^13.29",
-        "laravel/ai": "^0.11.2"
+        "laravel/ai": "^0.11.2 || ^1.0"
     },
     "require-dev": {
         "orchestra/testbench": "^11.0",

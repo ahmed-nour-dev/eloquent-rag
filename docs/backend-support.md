@@ -157,4 +157,6 @@ native vector query builder API is genuinely new (merged via Laravel PR
 `vec_fromtext(...)` wrapper for MariaDB), so this constraint is treated as
 pinned to unstable/settling code: it gets widened only after a new point
 release has been explicitly run through this package's own CI matrix
-(`.github/workflows/tests.yml`), not proactively.
+(`.github/workflows/tests.yml`), not proactively. See
+[support-policy.md](support-policy.md) for the full version support policy,
+including `laravel/ai`.
