@@ -85,3 +85,31 @@ a word-for-word match for "no bundled tokenizer."
   given provider, the correct move per ADR-0001 is to have an app-level
   `Tokenizer` implementation delegate to it (or for this ADR to be revisited
   to recommend that as the default path) — not to duplicate it here.
+
+## Addendum: an optional `tiktoken` driver (issue #71)
+
+In practice every app that needed model-aware sizing was re-implementing
+the same small wrapper from docs/tokenization.md, and the gap matters most
+for Arabic and other non-Latin text, where whitespace counting
+underestimates real token use the most. So the package now ships
+`TiktokenTokenizer`, selected with `chunk.tokenizer = 'tiktoken'`, an
+adapter over `yethee/tiktoken`. What stays true from the decision above:
+
+- `yethee/tiktoken` is only `suggest`ed (and a dev dependency, for this
+  package's own tests). `composer.json`'s runtime `require` list is
+  unchanged. Choosing the driver without the package installed throws
+  `InvalidTokenizerDriver::missingDependency()`, not a fatal error.
+- There is still no encoding-to-model mapping. The app picks the encoding
+  (`chunk.tiktoken_encoding`, default `cl100k_base`), and the identifier
+  (`tiktoken:<encoding>`) feeds `configuration_hash` like any other
+  tokenizer's.
+- `whitespace` stays the default, and custom `Tokenizer` classes work
+  exactly as before.
+
+One thing the adapter has to handle that a word-splitter never did: BPE
+tokens are byte sequences, so a token-slice boundary can split a multi-byte
+UTF-8 character. `decode()` drops incomplete sequences at either edge of a
+slice (deterministically; chunk overlap keeps the character whole in the
+neighboring chunk) instead of handing invalid UTF-8 to the embedding
+provider.
+

@@ -14,16 +14,18 @@ return [
     |
     | `tokenizer` selects the Tokenizer Chunker uses to split text into
     | token-sized pieces: 'whitespace' (the default, zero dependencies,
-    | approximates tokens by word count) or the fully-qualified class name
-    | of your own class implementing Ahmednour\EloquentRag\Support\Tokenizer
-    | for real model-aware sizing (e.g. wrapping a tiktoken binding). See
-    | ADR-0009 (docs/adr/0009-tokenizer-abstraction.md) and
-    | docs/tokenization.md.
+    | approximates tokens by word count), 'tiktoken' (real BPE token counts
+    | via the optional yethee/tiktoken package — `composer require
+    | yethee/tiktoken` — using the `tiktoken_encoding` below), or the
+    | fully-qualified class name of your own class implementing
+    | Ahmednour\EloquentRag\Support\Tokenizer. See ADR-0009
+    | (docs/adr/0009-tokenizer-abstraction.md) and docs/tokenization.md.
     */
     'chunk' => [
         'max_tokens' => 400,
         'overlap' => 40,
         'tokenizer' => 'whitespace',
+        'tiktoken_encoding' => 'cl100k_base',
     ],
 
     /*
