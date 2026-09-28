@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (while pre-1.0, a minor version may contain breaking changes; they are
 called out below).
 
+<!--
+  Use absolute https://github.com/... URLs for links in this file: the
+  release workflow publishes each version's section as GitHub release
+  notes, where relative paths like docs/foo.md don't resolve.
+-->
+
 ## [Unreleased]
 
 ## [0.2.0-beta.1] - 2026-09-28
@@ -19,7 +25,7 @@ Second beta. Not yet recommended for production: see
   `embed()` and search now work on SQLite and plain MySQL when
   `eloquent-rag.portable_fallback.enabled` / `RAG_PORTABLE_FALLBACK` is on,
   storing JSON embeddings and ranking by cosine similarity in PHP. See
-  [ADR-0011](docs/adr/0011-portable-fallback-backend.md). (#63)
+  [ADR-0011](https://github.com/ahmed-nour-dev/eloquent-rag/blob/main/docs/adr/0011-portable-fallback-backend.md). (#63)
 - **Scored search results**: `Product::searchRagWithScores()`,
   `Rag::searchWithScores()`, and `RagSearch::searchWithScores()` return
   `RagSearchResult` objects with the model, cosine similarity `score`,
@@ -30,7 +36,7 @@ Second beta. Not yet recommended for production: see
 - `rag:doctor` warns when synced documents have no embeddings yet. (#64)
 - **Lifecycle events**: `RagDocumentSynced`, `RagDocumentEmbedded`,
   `RagSyncFailed`, `RagEmbeddingFailed`. (#73)
-- **`Rag::fake()`** and a [testing guide](docs/testing.md) for testing
+- **`Rag::fake()`** and a [testing guide](https://github.com/ahmed-nour-dev/eloquent-rag/blob/main/docs/testing.md) for testing
   `HasRag` models without a vector database or embedding provider. (#72)
 - **Pivot helpers** `attachRag()`, `detachRag()`, `syncRagRelation()` on
   `HasRag`, and a **`rag:verify`** command that detects documents that
@@ -41,9 +47,9 @@ Second beta. Not yet recommended for production: see
   PostgreSQL (#66), an allowed-to-fail `laravel/ai` 1.x-dev leg, and a
   weekly scheduled run (#70).
 - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, issue templates, and a
-  [version support policy](docs/support-policy.md). (#69, #70)
+  [version support policy](https://github.com/ahmed-nour-dev/eloquent-rag/blob/main/docs/support-policy.md). (#69, #70)
 - Explicit queue retry/backoff/timeout policy for `SyncRagDocument` and
-  `ForgetRagDocument` ([ADR-0010](docs/adr/0010-queue-retry-policy.md)). (#55)
+  `ForgetRagDocument` ([ADR-0010](https://github.com/ahmed-nour-dev/eloquent-rag/blob/main/docs/adr/0010-queue-retry-policy.md)). (#55)
 
 ### Changed
 
