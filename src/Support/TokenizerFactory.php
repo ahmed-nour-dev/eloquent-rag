@@ -8,7 +8,8 @@ use Ahmednour\EloquentRag\Exceptions\InvalidTokenizerDriver;
 
 /**
  * Resolves the Tokenizer named by config('eloquent-rag.chunk.tokenizer').
- * The built-in 'whitespace' driver needs no container resolution; anything
+ * The built-in 'whitespace' driver needs no container resolution, and the
+ * optional 'tiktoken' driver is built from its own config; anything
  * else is resolved through app() (not `new`) so a custom Tokenizer can
  * have its own constructor-injected dependencies, matching the rest of
  * this package's reliance on Laravel's implicit container resolution
@@ -22,6 +23,10 @@ final class TokenizerFactory
 
         if ($driver === 'whitespace') {
             return new WhitespaceTokenizer;
+        }
+
+        if ($driver === 'tiktoken') {
+            return TiktokenTokenizer::fromConfig();
         }
 
         if (! is_string($driver) || ! class_exists($driver)) {

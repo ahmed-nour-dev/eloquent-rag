@@ -61,7 +61,15 @@ between or before pairs in a batch — a single pair's own `sync()` failure
 is already caught and recorded on that document's row instead (issue #54),
 never retried.
 
-Neither job is `ShouldBeUnique`. This is a deliberate decision, not an
+With [automatic embedding](definition-api.md#automatic-embedding) on,
+`SyncRagDocument` hands the documents it actually rewrote to a separate
+`EmbedRagDocuments` job (batches of `embedding.auto_batch_size`, default
+50) rather than calling the embedding provider itself. It has the same
+`$tries = 3` / `$backoff = [10, 60]` and per-document failure isolation,
+with a longer `$timeout` of 300 seconds, since each document costs a
+provider round-trip.
+
+None of these jobs is `ShouldBeUnique`. This is a deliberate decision, not an
 oversight: a model's own queued sync and a dependency fan-out that also
 covers it can land on the queue back-to-back, and a queue-level dedup key
 would risk silently dropping the newer of the two rather than letting both
@@ -103,9 +111,41 @@ $product->features()->attach($feature->id);
 $product->resyncRag(); // re-derives and reconciles rag_dependencies for $product
 ```
 
-Forgetting either of these doesn't error — it silently leaves stale
-dependency rows or a stale rendered document. `php artisan rag:doctor`
-surfaces orphaned/failed state it can detect, but it cannot detect "you
-forgot to call `resyncRag()` after an attach three weeks ago" after the
-fact — there's no signal left behind for it to find. Treat both of the
-calls above as part of the write path itself, not an afterthought.
+Or use the one-call helpers `HasRag` provides, so there's no second line
+to forget:
+
+```php
+$product->attachRag('features', $feature->id);             // attach() + resyncRag()
+$product->detachRag('features', $feature->id);             // detach() + resyncRag()
+$product->syncRagRelation('features', [$a->id, $b->id]);   // sync()   + resyncRag()
+```
+
+They take the same arguments as `attach()`/`detach()`/`sync()` (plus the
+relation name first), return what those return, and throw
+`InvalidArgumentException` if the relation isn't a `belongsToMany`.
+
+Forgetting any of this doesn't error — it silently leaves stale dependency
+rows or a stale rendered document, and no event is left behind for
+`rag:doctor` to find. What *is* left behind is the drift itself, and
+`rag:verify` looks for exactly that:
+
+```bash
+php artisan rag:verify                        # every indexed model type
+php artisan rag:verify "App\Models\Product"   # one type, also finds rows with no document
+php artisan rag:verify --sample=500           # spot-check 500 random documents per type
+php artisan rag:verify --fix                  # re-sync whatever drifted
+```
+
+It re-renders each document's model and compares the result against the
+stored `content_hash`, `configuration_hash`, and `rag_dependencies` rows,
+reporting any mismatch (plus documents whose model row is gone — clean
+those up with `rag:prune`). It can't tell you *which* write path caused a
+drift, only that one happened. It exits non-zero while unfixed drift
+remains, so it works as a scheduled job or CI check. `--fix` re-syncs
+structurally; generate embeddings for the re-synced documents with
+`rag:sync`, or let [automatic embedding](definition-api.md#automatic-embedding)
+do it.
+
+Still treat the invalidation calls above as part of the write path —
+`rag:verify` is how you catch the one you missed, not a replacement for
+making them.

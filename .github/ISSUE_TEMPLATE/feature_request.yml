@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the use case. What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like the API or behavior to look like?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you're using now, or other approaches you considered.
+  - type: markdown
+    attributes:
+      value: |
+        Please check [docs/principles.md](https://github.com/ahmed-nour-dev/eloquent-rag/blob/main/docs/principles.md) for the package's explicit non-goals first.

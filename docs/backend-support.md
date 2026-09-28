@@ -6,20 +6,66 @@
 |---|---|---|
 | MariaDB 11.7+ | ✅ | Laravel 13.29+ |
 | PostgreSQL + `pgvector` extension | ✅ | Laravel 13.x |
-| Plain MySQL 8.x | ❌ | No native vector backend — not supported, no fallback |
+| Plain MySQL 8.x / 9.x | ⚠️ dev only | No native vector backend — production vector search unsupported; opt-in [portable fallback](#portable-fallback) for development/small data |
+| SQLite | ⚠️ dev only | Same as plain MySQL |
 | Pinecone / Qdrant / Weaviate | ❌ | Out of scope unless demonstrated demand emerges |
 
 This package relies entirely on Laravel's own native vector query builder
 (`whereVectorDistanceLessThan`, `orderByVectorDistance`,
 `selectVectorDistance`) and native vector column type
-(`Blueprint::vector()`, the `AsVector` cast). It does not, and will not,
-implement a PHP-side fallback for unsupported backends — see
-[ADR-0001](adr/0001-package-boundary.md) and
-[ADR-0003](adr/0003-backend-support-matrix.md). If your backend isn't in
-the table above, this package genuinely cannot help with vector search —
-it can still track dependencies and render documents (that part of the
-package works on any Eloquent-compatible connection, including SQLite),
-but `embed()` and search will refuse to run.
+(`Blueprint::vector()`, the `AsVector` cast) for production vector search
+— see [ADR-0001](adr/0001-package-boundary.md) and
+[ADR-0003](adr/0003-backend-support-matrix.md). On any other backend,
+the dependency-tracking half of the package (lifecycle sync, rendering,
+chunking, fan-out, invalidation, and every CLI command) still works —
+this package's own test suite runs it on SQLite — but `embed()` and search
+refuse to run unless you opt into the portable fallback below.
+
+## Portable fallback
+
+For local development, CI, demos, and small datasets on a backend with no
+native vector support, you can opt into a portable fallback
+([ADR-0011](adr/0011-portable-fallback-backend.md)):
+
+```php
+// config/eloquent-rag.php — or RAG_PORTABLE_FALLBACK=true in .env
+'portable_fallback' => [
+    'enabled' => true,
+],
+```
+
+With it enabled, on **SQLite** or a **real MySQL server** (the connections
+where `rag_chunks.embedding` stays a plain text column):
+
+- `embed()` stores each embedding as JSON text in `rag_chunks.embedding`.
+- `searchRag()`/`searchRagWithScores()`/`Rag::search()` stream every
+  embedded chunk of the searched model type into PHP and rank documents by
+  cosine similarity of their best chunk — the same ranking, `limit`,
+  `minSimilarity`, and `scope()` semantics as native search.
+- `rag:doctor` reports the fallback as a `WARN` instead of failing the
+  vector-backend check.
+
+**It is not a production vector store.** Every search reads every embedded
+chunk of that model type, so its cost grows linearly with your data —
+there is no index. It's meant for a few thousand chunks, not a catalog.
+Supported backends (MariaDB 11.7+, PostgreSQL+pgvector) always use native
+vector search, whether or not the fallback is enabled. A MariaDB server
+below 11.7 or a PostgreSQL server without `pgvector` is deliberately not
+served by the fallback — upgrade the server or install the extension
+instead.
+
+Moving from the fallback to a supported backend needs no data migration
+beyond pointing the app at the new database and running this package's
+migrations there, then `php artisan rag:rebuild` to populate it.
+
+## Laravel 12
+
+Not supported. `composer.json` requires `illuminate/*: ^13.29` and
+`laravel/ai: ^0.11`, and the package's own code relies on Laravel 13's
+vector query builder and `AsVector` cast. The sync/dependency-tracking half
+doesn't *call* any vector API, but it isn't packaged separately, so
+Composer won't install this package on Laravel 12 either way. If there's
+demand for a Laravel 12–compatible sync-only package, open an issue.
 
 ## Why the check is stricter than Laravel's own
 
@@ -89,7 +135,7 @@ any infrastructure change (Laravel upgrade, database migration, changing
 | Check | Level | What it catches |
 |---|---|---|
 | Laravel version | FAIL | Below the 13.29 floor |
-| Vector backend | FAIL | Wrong driver, MariaDB below 11.7, or Postgres missing `pgvector` — the real checks above, not just Laravel's grammar flag |
+| Vector backend | FAIL | Wrong driver, MariaDB below 11.7, or Postgres missing `pgvector` — the real checks above, not just Laravel's grammar flag. Reported as a `WARN` instead when the [portable fallback](#portable-fallback) is enabled and serving this connection |
 | Embedding dimension | FAIL | `rag_chunks.embedding`'s actual declared vector size doesn't match `config('eloquent-rag.embedding.dimensions')` (skipped if the backend check above already failed) |
 | Vector index | WARN | No indexed vector search available on this connection — always on MariaDB (see [Vector indexing](#vector-indexing)), or on Postgres if the expected index is missing (skipped if the backend check above already failed) |
 | Queue driver | WARN | `queue.default` is `sync` — fan-out will run inline instead of batched, fine locally, not recommended in production |
@@ -111,4 +157,6 @@ native vector query builder API is genuinely new (merged via Laravel PR
 `vec_fromtext(...)` wrapper for MariaDB), so this constraint is treated as
 pinned to unstable/settling code: it gets widened only after a new point
 release has been explicitly run through this package's own CI matrix
-(`.github/workflows/tests.yml`), not proactively.
+(`.github/workflows/tests.yml`), not proactively. See
+[support-policy.md](support-policy.md) for the full version support policy,
+including `laravel/ai`.

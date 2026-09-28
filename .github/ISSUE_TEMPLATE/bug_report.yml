@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in Eloquent RAG doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please run `php artisan rag:doctor` first — it catches most setup problems. For security issues, see SECURITY.md instead of filing an issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: A minimal model definition (`toRagDefinition()`) and the calls that trigger the problem.
+      render: php
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`php artisan rag:doctor` output"
+      render: shell
+  - type: input
+    id: package-version
+    attributes:
+      label: Eloquent RAG version
+      placeholder: "v0.1.0-beta.1"
+    validations:
+      required: true
+  - type: input
+    id: laravel-version
+    attributes:
+      label: Laravel and laravel/ai versions
+      placeholder: "laravel/framework 13.31.0, laravel/ai 1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - MariaDB 11.7+
+        - PostgreSQL + pgvector
+        - MySQL (portable fallback)
+        - SQLite (portable fallback)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: php-version
+    attributes:
+      label: PHP version
+      placeholder: "8.4.3"

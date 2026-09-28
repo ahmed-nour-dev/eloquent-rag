@@ -82,3 +82,15 @@ DB reconciliation: `sync()`'s content/configuration-hash short-circuit
   by `sync()`'s existing idempotency (ADR-0004), not by queue-level
   dedup — consuming applications should not expect
   `SyncRagDocument`/`ForgetRagDocument` to ever refuse a dispatch.
+
+## Addendum: `EmbedRagDocuments` (issue #64)
+
+The statement above that neither job calls an external embedding provider
+no longer covers every job: with `config('eloquent-rag.embedding.auto')`
+on, `SyncRagDocument` queues `EmbedRagDocuments` for the documents it
+rewrote. That job does call the provider, so it is kept separate from the
+sync batch (smaller batches via `embedding.auto_batch_size`, its own
+`$timeout = 300`) and follows the same policy as the two jobs above:
+`$tries = 3`, `$backoff = [10, 60]`, per-document try/catch that records
+failures on the document row, and no `ShouldBeUnique`. Retrying it is
+safe, because `embed()` only fills chunks whose embedding is still `NULL`.

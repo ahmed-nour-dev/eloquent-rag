@@ -22,3 +22,6 @@ Thumbs.db
 /.idea
 /.vscode
 *.log
+
+# Local planning/tooling scratch space — never part of the published package.
+/.orca

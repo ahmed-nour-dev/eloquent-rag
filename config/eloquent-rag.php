@@ -14,16 +14,18 @@ return [
     |
     | `tokenizer` selects the Tokenizer Chunker uses to split text into
     | token-sized pieces: 'whitespace' (the default, zero dependencies,
-    | approximates tokens by word count) or the fully-qualified class name
-    | of your own class implementing Ahmednour\EloquentRag\Support\Tokenizer
-    | for real model-aware sizing (e.g. wrapping a tiktoken binding). See
-    | ADR-0009 (docs/adr/0009-tokenizer-abstraction.md) and
-    | docs/tokenization.md.
+    | approximates tokens by word count), 'tiktoken' (real BPE token counts
+    | via the optional yethee/tiktoken package — `composer require
+    | yethee/tiktoken` — using the `tiktoken_encoding` below), or the
+    | fully-qualified class name of your own class implementing
+    | Ahmednour\EloquentRag\Support\Tokenizer. See ADR-0009
+    | (docs/adr/0009-tokenizer-abstraction.md) and docs/tokenization.md.
     */
     'chunk' => [
         'max_tokens' => 400,
         'overlap' => 40,
         'tokenizer' => 'whitespace',
+        'tiktoken_encoding' => 'cl100k_base',
     ],
 
     /*
@@ -37,11 +39,21 @@ return [
     | `provider` is null by default, meaning "use laravel/ai's own
     | config('ai.default_for_embeddings')" — set it explicitly to pin a
     | specific provider regardless of the app's general AI default.
+    |
+    | `auto` chains embedding onto the queued lifecycle sync: when a save
+    | (or a dependency fan-out) actually changes a document, an
+    | EmbedRagDocuments job is queued for it, so it becomes searchable
+    | without running `php artisan rag:sync`. Off by default because it
+    | makes every content-changing save call your embedding provider (cost,
+    | rate limits). `auto_batch_size` bounds how many documents one
+    | EmbedRagDocuments job embeds. See docs/definition-api.md#automatic-embedding.
     */
     'embedding' => [
         'provider' => null,
         'model' => 'text-embedding-3-small',
         'dimensions' => 1536,
+        'auto' => (bool) env('RAG_AUTO_EMBED', false),
+        'auto_batch_size' => 50,
     ],
 
     /*
@@ -85,6 +97,25 @@ return [
     */
     'search' => [
         'max_limit' => 1000,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Portable fallback vector store (development / small data only)
+    |--------------------------------------------------------------------------
+    |
+    | Off by default. When enabled, embed() and search also work on SQLite
+    | and plain MySQL — connections with no native vector support — by
+    | storing each embedding as JSON text and ranking with cosine
+    | similarity computed in PHP. Every search reads EVERY embedded chunk
+    | of the searched model type into PHP, so cost grows linearly with your
+    | data: fine for local development, CI, demos, and a few thousand
+    | chunks, NOT a production vector store. Supported backends (MariaDB
+    | 11.7+, PostgreSQL+pgvector) always use native vector search whether
+    | or not this is enabled. See docs/backend-support.md#portable-fallback.
+    */
+    'portable_fallback' => [
+        'enabled' => (bool) env('RAG_PORTABLE_FALLBACK', false),
     ],
 
     /*

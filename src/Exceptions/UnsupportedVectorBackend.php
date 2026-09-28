@@ -17,7 +17,7 @@ final class UnsupportedVectorBackend extends RuntimeException
     public static function unsupportedDriver(string $driver): self
     {
         return new self(sprintf(
-            'The [%s] database driver has no native vector support. Eloquent RAG requires MariaDB 11.7+ or PostgreSQL with the pgvector extension — see ADR-0003 (docs/adr/0003-backend-support-matrix.md). Plain MySQL is explicitly unsupported: there is no PHP-side cosine-similarity fallback.',
+            'The [%s] database driver has no native vector support. Eloquent RAG requires MariaDB 11.7+ or PostgreSQL with the pgvector extension — see ADR-0003 (docs/adr/0003-backend-support-matrix.md). Plain MySQL and SQLite have no production vector search; for local development or small data only, you can opt into the portable fallback (config(\'eloquent-rag.portable_fallback.enabled\') / RAG_PORTABLE_FALLBACK=true) — see docs/backend-support.md#portable-fallback.',
             $driver,
         ));
     }

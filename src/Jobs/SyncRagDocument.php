@@ -51,6 +51,10 @@ use Throwable;
  * batch for an overlapping key hasn't run yet — exactly the
  * supersede-not-drop hazard called out in #55. sync()'s own idempotency
  * already makes any genuine duplicate dispatch wasteful, never incorrect.
+ *
+ * With config('eloquent-rag.embedding.auto') on, the pairs whose sync()
+ * actually rewrote their document are handed to EmbedRagDocuments after
+ * the loop (issue #64) — embedding never runs inside this job itself.
  */
 final class SyncRagDocument implements ShouldQueue
 {
@@ -72,6 +76,8 @@ final class SyncRagDocument implements ShouldQueue
 
     public function handle(): void
     {
+        $changed = [];
+
         foreach ($this->pairs as $pair) {
             $model = $pair['model_type']::find($pair['model_id']);
 
@@ -82,10 +88,35 @@ final class SyncRagDocument implements ShouldQueue
             }
 
             try {
-                $model->rag()->sync();
+                if ($model->rag()->sync()) {
+                    $changed[] = $pair;
+                }
             } catch (Throwable $e) {
                 $this->recordFailure($model, $e);
             }
+        }
+
+        $this->queueEmbedding($changed);
+    }
+
+    /**
+     * config('eloquent-rag.embedding.auto') (issue #64): hand the documents
+     * this pass actually rewrote to EmbedRagDocuments, in bounded batches.
+     * Documents whose sync() short-circuited on an unchanged hash pair are
+     * left out — their embeddings (if any) are still current.
+     *
+     * @param  list<array{model_type: string, model_id: int|string}>  $pairs
+     */
+    private function queueEmbedding(array $pairs): void
+    {
+        if ($pairs === [] || ! config('eloquent-rag.embedding.auto', false)) {
+            return;
+        }
+
+        $batchSize = max(1, (int) config('eloquent-rag.embedding.auto_batch_size', 50));
+
+        foreach (array_chunk($pairs, $batchSize) as $batch) {
+            EmbedRagDocuments::dispatch($batch);
         }
     }
 

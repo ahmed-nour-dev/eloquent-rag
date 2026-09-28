@@ -11,6 +11,7 @@ use Ahmednour\EloquentRag\Console\Commands\RagPruneCommand;
 use Ahmednour\EloquentRag\Console\Commands\RagRebuildCommand;
 use Ahmednour\EloquentRag\Console\Commands\RagStatusCommand;
 use Ahmednour\EloquentRag\Console\Commands\RagSyncCommand;
+use Ahmednour\EloquentRag\Console\Commands\RagVerifyCommand;
 use Ahmednour\EloquentRag\Models\RagChunk;
 use Ahmednour\EloquentRag\Models\RagDependency;
 use Ahmednour\EloquentRag\Models\RagDocument;
@@ -43,6 +44,7 @@ class EloquentRagServiceProvider extends ServiceProvider
                 RagPruneCommand::class,
                 RagForgetCommand::class,
                 RagDependenciesCommand::class,
+                RagVerifyCommand::class,
             ]);
         }
     }

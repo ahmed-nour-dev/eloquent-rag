@@ -2,11 +2,11 @@
 
 ## Methodology
 
-Extends the Phase 0 spike's validated approach
+Extends the dependency-graph spike's validated approach
 ([docs/spikes/0001-dependency-graph.md](spikes/0001-dependency-graph.md))
-to the scale the build plan calls for, against this package's real,
-permanent schema (`benchmarks/FanoutBenchmarkTest.php`, not a permanent
-part of the test suite — run it explicitly with
+to 10k / 100k / 1M dependent documents, against this package's real,
+permanent schema (`benchmarks/FanoutBenchmarkTest.php`, not part of the
+regular test suite — run it explicitly with
 `vendor/bin/pest benchmarks/FanoutBenchmarkTest.php`).
 
 At each scale, N `rag_documents` rows are bulk-inserted (bypassing model
@@ -25,10 +25,44 @@ Measured:
   many `SyncRagDocument` batches actually get dispatched (asserted to
   exactly match `⌈N / batch_size⌉`, batch size 500).
 
+## Running it yourself
+
+| Variable | Meaning |
+|---|---|
+| `RAG_BENCH_BACKEND` | `sqlite` (default, in-memory), `mariadb`, or `pgsql` |
+| `RAG_BENCH_SCALES` | Comma-separated document counts, default `10000,100000,1000000` |
+| `RAG_BENCH_REPORT` | Optional file path; each scale appends a Markdown table row to it |
+| `RAG_TEST_MARIADB_*` / `RAG_TEST_PGSQL_*` | Connection details — the same variables the acceptance suites under `tests/Integration/` read |
+
+```bash
+# SQLite baseline
+vendor/bin/pest benchmarks/FanoutBenchmarkTest.php
+
+# A real MariaDB 11.7+ server
+RAG_BENCH_BACKEND=mariadb RAG_TEST_MARIADB_HOST=127.0.0.1 RAG_TEST_MARIADB_PASSWORD=root \
+    vendor/bin/pest benchmarks/FanoutBenchmarkTest.php
+
+# A real PostgreSQL server with pgvector (run CREATE EXTENSION vector first)
+RAG_BENCH_BACKEND=pgsql RAG_TEST_PGSQL_HOST=127.0.0.1 RAG_TEST_PGSQL_PASSWORD=postgres \
+    vendor/bin/pest benchmarks/FanoutBenchmarkTest.php
+```
+
+The [`benchmarks` workflow](../.github/workflows/benchmarks.yml) does
+exactly this against the same MariaDB 11.7.2 and pgvector 0.8.6 / PG16
+service containers the test workflow uses. It runs monthly and on manual
+dispatch (never on every PR — seeding 1,000,000 rows into a real server
+takes minutes), and writes a results table into the run's summary page.
+
+Publishing stays manual on purpose: numbers are copied from a real run's
+output into this file by hand, so a stale figure here can't silently drift
+from what was measured without someone visibly re-running the benchmark
+and editing the doc.
+
 ## Results
 
-Measured on this sandbox's SQLite connection (`:memory:`), single run,
-2026-09-13:
+### SQLite baseline
+
+SQLite `:memory:`, single run on a development machine, 2026-09-13:
 
 | Documents | Seed time | Reverse-lookup time | Batches dispatched | Resolve + dispatch time |
 |---|---|---|---|---|
@@ -40,7 +74,7 @@ All three scales completed the full run — 1,000,000 was not scaled down.
 Every `Bus::assertDispatchedTimes(SyncRagDocument::class, ...)` assertion
 passed exactly (20 / 200 / 2,000 batches, never one job per document),
 confirming bounded, batched fan-out held at every scale tested, matching
-the Phase 0 spike's finding at a smaller scale (50k/200k).
+the dependency-graph spike's finding at a smaller scale (50k/200k).
 
 Lookup time scales roughly linearly with data size (100x the data, ~150x
 the lookup time — slightly worse than strictly linear, consistent with a
@@ -50,6 +84,18 @@ is dominated by materializing the affected-pairs collection before
 chunking it — the same cost the real `DependencyInvalidator` pays in
 production.
 
+### MariaDB 11.7 and PostgreSQL + pgvector
+
+Measured by the [`benchmarks` workflow](../.github/workflows/benchmarks.yml)
+on a GitHub-hosted `ubuntu-latest` runner, with the database in a service
+container on the same host (so there is a real client/server round-trip,
+but over loopback).
+
+*Not yet published.* The workflow and backend-selectable benchmark landed
+together; the first run's numbers go here, copied from that run's summary
+table. Until then, treat the SQLite baseline above as the only published
+figure.
+
 ## What this is, and isn't, evidence of
 
 **This is strong evidence the fan-out *design* doesn't have an inherent
@@ -57,15 +103,12 @@ scaling problem**: reverse lookup and batch dispatch both stayed
 sub-3-second even at 1,000,000 simulated dependent documents, and neither
 step hydrates a single `Product` model along the way.
 
-**This is not a substitute for real MariaDB 11.7+/PostgreSQL+pgvector
-benchmarks.** These numbers are SQLite, on this sandbox's hardware, with
-no network round-trip to a database server, no replication, no connection
-pooling contention, and no concurrent write load. A production MariaDB or
+**It is not a production load test.** Even the real-backend numbers come
+from a single CI runner with no replication, no connection-pooling
+contention, and no concurrent write load. A production MariaDB or
 PostgreSQL server under real traffic will have different absolute numbers
 — likely slower for the reverse lookup (network + real disk I/O) but
 potentially more consistent under concurrent load than a single SQLite
-file. Re-running `benchmarks/FanoutBenchmarkTest.php` against the real
-backends provisioned by `.github/workflows/tests.yml` (pointed at
-`RAG_TEST_MARIADB_*`/`RAG_TEST_PGSQL_*`) is the natural next step once
-that CI has actually run — see the honest gap statement in the Phase 5
-summary for what remains unverified in this sandbox.
+file. Re-run the benchmark against your own infrastructure (see
+[Running it yourself](#running-it-yourself)) if absolute numbers matter to
+you.

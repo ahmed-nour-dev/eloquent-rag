@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly, so upstream breakage (Laravel, laravel/ai) surfaces even in a
+    # week with no pushes. 05:23 UTC Mondays.
+    - cron: "23 5 * * 1"
 
 jobs:
   mariadb:
@@ -66,8 +70,12 @@ jobs:
         # wrapper, so the floor is pinned to 13.29.0 — the first release
         # containing that fix — not 13.27.0 (ADR-0003's whole reason for
         # pinning ^13.29 instead of ^13.0).
+        #
+        # laravel/ai is pinned to the oldest version composer.json allows
+        # (0.11.2) on this leg too, so the floor leg tests the oldest
+        # supported combination and the latest leg the newest (docs/support-policy.md).
         run: |
-          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" -W --no-interaction --no-progress
+          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" "laravel/ai:0.11.2" -W --no-interaction --no-progress
 
       - name: Wait for MariaDB
         run: |
@@ -142,7 +150,7 @@ jobs:
       - name: Pin to the ADR-0003 13.29 floor
         if: matrix.laravel == 'floor'
         run: |
-          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" -W --no-interaction --no-progress
+          composer require "illuminate/database:13.29.0" "illuminate/support:13.29.0" "illuminate/queue:13.29.0" "laravel/ai:0.11.2" -W --no-interaction --no-progress
 
       - name: Enable pgvector on the test database
         run: |
@@ -163,3 +171,36 @@ jobs:
 
       - name: PHPStan
         run: vendor/bin/phpstan analyse --no-progress
+
+  laravel-ai-next:
+    # Early warning, not a gate: runs the SQLite suite (unit + feature,
+    # including the portable-fallback embed/search tests, which exercise
+    # this package's whole laravel/ai surface) against laravel/ai's
+    # unreleased development branch — currently 1.x (laravel/ai has no
+    # main branch; bump this when its next major branch opens). Allowed to fail — a red run here means an
+    # upcoming laravel/ai release will likely need changes before
+    # composer.json's constraint can include it. See
+    # docs/support-policy.md.
+    name: "laravel/ai 1.x-dev (allowed to fail)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, pdo, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Install dependencies against laravel/ai's development branch
+        run: |
+          composer config minimum-stability dev
+          composer config prefer-stable true
+          composer require "laravel/ai:1.x-dev" -W --no-interaction --no-progress
+
+      - name: Show resolved laravel/ai version
+        run: composer show laravel/ai | head -5
+
+      - name: Run tests
+        run: vendor/bin/pest --testsuite=Unit,Feature
