@@ -66,6 +66,12 @@ final class RagSynchronizer
      */
     public function sync(bool $force = false): bool
     {
+        if ($fake = Rag::faking()) {
+            $fake->recordSync($this->model, $this->definition, $force);
+
+            return true;
+        }
+
         try {
             $document = $this->performSync($force);
         } catch (Throwable $e) {
@@ -174,6 +180,14 @@ final class RagSynchronizer
      */
     public function queue(): void
     {
+        // Under Rag::fake() the sync is recorded immediately rather than
+        // queued, so it's observable whatever queue driver the test uses.
+        if (Rag::faking()) {
+            $this->sync();
+
+            return;
+        }
+
         SyncRagDocument::dispatch([
             ['model_type' => $this->model::class, 'model_id' => $this->model->getKey()],
         ])->afterCommit();
@@ -185,6 +199,12 @@ final class RagSynchronizer
      */
     public function forget(): void
     {
+        if ($fake = Rag::faking()) {
+            $fake->recordForget($this->model);
+
+            return;
+        }
+
         $this->findDocument()?->delete();
     }
 
@@ -198,6 +218,12 @@ final class RagSynchronizer
      */
     public function queueForget(): void
     {
+        if (Rag::faking()) {
+            $this->forget();
+
+            return;
+        }
+
         ForgetRagDocument::dispatch([
             ['model_type' => $this->model::class, 'model_id' => $this->model->getKey()],
         ])->afterCommit();
@@ -226,6 +252,12 @@ final class RagSynchronizer
      */
     public function embed(): void
     {
+        if ($fake = Rag::faking()) {
+            $fake->recordEmbed($this->model);
+
+            return;
+        }
+
         try {
             [$document, $embeddedChunks] = $this->performEmbed();
         } catch (Throwable $e) {

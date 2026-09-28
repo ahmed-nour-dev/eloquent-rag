@@ -95,6 +95,10 @@ final class RagSearch
      */
     public function search(string $query, int $limit = 10, ?float $minSimilarity = null): EloquentCollection
     {
+        if ($fake = Rag::faking()) {
+            return $fake->search($this->modelClass, $query, $this->validatedLimit($limit, $minSimilarity), $minSimilarity);
+        }
+
         $ranked = $this->rank($query, $limit, $minSimilarity, withChunks: false);
         $models = $this->hydrate($ranked->pluck('model_id'));
 
@@ -121,6 +125,10 @@ final class RagSearch
      */
     public function searchWithScores(string $query, int $limit = 10, ?float $minSimilarity = null): Collection
     {
+        if ($fake = Rag::faking()) {
+            return $fake->searchWithScores($this->modelClass, $query, $this->validatedLimit($limit, $minSimilarity), $minSimilarity);
+        }
+
         $ranked = $this->rank($query, $limit, $minSimilarity, withChunks: true);
         $models = $this->hydrate($ranked->pluck('model_id'));
 
@@ -145,15 +153,7 @@ final class RagSearch
      */
     private function rank(string $query, int $limit, ?float $minSimilarity, bool $withChunks): Collection
     {
-        if ($limit < 1) {
-            throw new InvalidArgumentException('$limit must be at least 1, got '.$limit.'.');
-        }
-
-        if ($minSimilarity !== null && ($minSimilarity < 0.0 || $minSimilarity > 1.0)) {
-            throw new InvalidArgumentException('$minSimilarity must be between 0.0 and 1.0, got '.$minSimilarity.'.');
-        }
-
-        $limit = min($limit, (int) config('eloquent-rag.search.max_limit'));
+        $limit = $this->validatedLimit($limit, $minSimilarity);
 
         VectorBackendCapability::ensureUsable($this->connectionName);
 
@@ -172,6 +172,25 @@ final class RagSearch
         $ranked = $this->rankNatively($vector, $limit, $minSimilarity);
 
         return $withChunks ? $this->attachBestChunks($ranked, $vector, $minSimilarity) : $ranked;
+    }
+
+    /**
+     * Rejects an invalid $limit/$minSimilarity and clamps $limit to
+     * config('eloquent-rag.search.max_limit') — shared by the real and the
+     * faked search paths, so a test under Rag::fake() still catches a bad
+     * argument.
+     */
+    private function validatedLimit(int $limit, ?float $minSimilarity): int
+    {
+        if ($limit < 1) {
+            throw new InvalidArgumentException('$limit must be at least 1, got '.$limit.'.');
+        }
+
+        if ($minSimilarity !== null && ($minSimilarity < 0.0 || $minSimilarity > 1.0)) {
+            throw new InvalidArgumentException('$minSimilarity must be between 0.0 and 1.0, got '.$minSimilarity.'.');
+        }
+
+        return min($limit, (int) config('eloquent-rag.search.max_limit'));
     }
 
     /**

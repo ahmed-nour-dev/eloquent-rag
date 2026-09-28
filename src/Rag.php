@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Testing\RagFake;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
@@ -12,6 +13,30 @@ final class Rag
     public static function make(): RagDefinition
     {
         return RagDefinition::make();
+    }
+
+    /**
+     * Replaces sync/embed/forget/search/invalidation with a recording test
+     * double for the rest of the current test (the fake lives in the
+     * container, so each test's fresh application starts un-faked). Use it
+     * to test your own HasRag models without a vector database or an
+     * embedding provider — see docs/testing.md.
+     */
+    public static function fake(): RagFake
+    {
+        $fake = new RagFake;
+
+        app()->instance(RagFake::class, $fake);
+
+        return $fake;
+    }
+
+    /**
+     * The active fake, or null when Rag::fake() hasn't been called.
+     */
+    public static function faking(): ?RagFake
+    {
+        return app()->bound(RagFake::class) ? app(RagFake::class) : null;
     }
 
     /**

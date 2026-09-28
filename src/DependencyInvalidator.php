@@ -28,6 +28,12 @@ final class DependencyInvalidator
             return;
         }
 
+        if ($fake = Rag::faking()) {
+            $fake->recordInvalidation($dependencyType, $ids);
+
+            return;
+        }
+
         // A dependency and the documents that reference it are assumed to
         // live on the same connection (true for the realistic case — a
         // tenant's Product depending on that same tenant's Category), so
