@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ahmed-nour-dev/eloquent-rag/security/advisories/new
+    about: Please report security issues privately, not as a public issue.
+  - name: Documentation
+    url: https://github.com/ahmed-nour-dev/eloquent-rag/tree/main/docs
+    about: Installation, the definition API, backend support, testing, and more.

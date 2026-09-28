@@ -9,7 +9,12 @@
         "ai",
         "embeddings"
     ],
-    "homepage": "https://github.com/ahmednour/eloquent-rag",
+    "homepage": "https://github.com/ahmed-nour-dev/eloquent-rag",
+    "support": {
+        "issues": "https://github.com/ahmed-nour-dev/eloquent-rag/issues",
+        "source": "https://github.com/ahmed-nour-dev/eloquent-rag",
+        "docs": "https://github.com/ahmed-nour-dev/eloquent-rag/tree/main/docs"
+    },
     "license": "MIT",
     "type": "library",
     "authors": [

@@ -54,8 +54,8 @@ entirely: it always re-renders, re-chunks, and re-embeds, and it bumps the
 document's `version` column each time. The document/chunk/dependency
 writes happen inside a single database transaction — a failure partway
 through never leaves a document pointing at half-replaced chunks or
-dependencies, which is what makes this "safe replacement," not
-delete-and-pray, per the build plan's own description of this command.
+dependencies, which is what makes this a safe replacement rather than
+delete-and-pray.
 
 ## `rag:prune` — cleanup after events were bypassed
 

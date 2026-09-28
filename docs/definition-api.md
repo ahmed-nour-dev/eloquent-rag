@@ -75,7 +75,7 @@ casts with nothing static to check.
 
 ## Why `toRagDefinition()`, not `rag()`
 
-The build plan describes this as a `rag()` method. In the actual API,
+An early design sketch named the definition method `rag()`. In the actual API,
 `rag()` is the *runtime* entry point (below) — it needs to stay a distinct
 name from the per-model definition method so the trait can provide both a
 declaration point and a stateful action object without a naming collision.
@@ -201,8 +201,8 @@ Rag::search(Product::class, 'a bluetooth speaker');      // equivalent, class-ag
 
 Both return a hydrated `Illuminate\Database\Eloquent\Collection` of the
 owner model (`Product`, not `RagDocument`/`RagChunk`), ordered by vector
-distance. `Product::rag()->search(...)` — the literal form named in the
-build plan — isn't possible in PHP once `rag()` already exists as a real
+distance. `Product::rag()->search(...)` — the form an early design sketch
+used — isn't possible in PHP once `rag()` already exists as a real
 instance method (a class can't have one method be both instance and
 static), so `searchRag()` is the static entry point instead.
 

@@ -2,7 +2,7 @@
 
 **Status:** Complete — **GO**
 
-**Plan reference:** `.orca/drops/eloquent-rag-build-plan.md`, Phase 0 (lines 55-97)
+**Plan reference:** Phase 0 of the package's original (unpublished) build plan. "Phase N" below refers to that plan's stages: 0 this spike, 1 document/chunk model, 2 Eloquent lifecycle, 3 Laravel AI integration, 4 CLI & operability, 5 release.
 
 ## Verdict
 
@@ -25,7 +25,7 @@ decision point Phase 2 needs to make that isn't covered by any existing ADR.
   mechanics only — no vector column, no embedding, no search touches this
   spike at all, so the backend choice in ADR-0003 is irrelevant here.
   Using SQLite avoided needing credentials for the shared MySQL instance
-  in the sandbox, which is unrelated to this project.
+  in the development environment, which is unrelated to this project.
 - Queue: Laravel's `database` driver, deliberately configured on a
   **second, physically separate SQLite connection** from the app's default
   connection (see Item 9 below for why this mattered).
@@ -87,7 +87,7 @@ limitation + escape-hatch design exactly).
 
 ### 1. No pivot model events exist in Laravel 13 (new decision needed for Phase 2)
 
-The build plan's Phase 2 line "Observers: `created`, `updated`, `deleted`,
+The original plan's Phase 2 line "Observers: `created`, `updated`, `deleted`,
 `restored`, plus pivot `attach`/`detach`" assumes pivot changes fire
 observable model events. **They don't, in this Laravel version.**
 `BelongsToMany::attach()`/`detach()` issue raw INSERT/DELETE statements
