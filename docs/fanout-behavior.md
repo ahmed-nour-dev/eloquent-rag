@@ -61,7 +61,15 @@ between or before pairs in a batch — a single pair's own `sync()` failure
 is already caught and recorded on that document's row instead (issue #54),
 never retried.
 
-Neither job is `ShouldBeUnique`. This is a deliberate decision, not an
+With [automatic embedding](definition-api.md#automatic-embedding) on,
+`SyncRagDocument` hands the documents it actually rewrote to a separate
+`EmbedRagDocuments` job (batches of `embedding.auto_batch_size`, default
+50) rather than calling the embedding provider itself. It has the same
+`$tries = 3` / `$backoff = [10, 60]` and per-document failure isolation,
+with a longer `$timeout` of 300 seconds, since each document costs a
+provider round-trip.
+
+None of these jobs is `ShouldBeUnique`. This is a deliberate decision, not an
 oversight: a model's own queued sync and a dependency fan-out that also
 covers it can land on the queue back-to-back, and a queue-level dedup key
 would risk silently dropping the newer of the two rather than letting both

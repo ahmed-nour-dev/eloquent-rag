@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ahmednour\EloquentRag;
 
+use Ahmednour\EloquentRag\Events\RagDocumentEmbedded;
+use Ahmednour\EloquentRag\Events\RagDocumentSynced;
+use Ahmednour\EloquentRag\Events\RagEmbeddingFailed;
+use Ahmednour\EloquentRag\Events\RagSyncFailed;
 use Ahmednour\EloquentRag\Exceptions\InvalidEmbeddingResponse;
 use Ahmednour\EloquentRag\Exceptions\UnsupportedVectorBackend;
 use Ahmednour\EloquentRag\Jobs\ForgetRagDocument;
@@ -21,6 +25,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Embeddings;
+use Throwable;
 
 /**
  * The one true sync routine for a single model instance, used identically
@@ -52,9 +57,33 @@ final class RagSynchronizer
      * rather than delete-and-pray. This method itself never catches its
      * own exceptions; callers that need per-model failure isolation across
      * a batch (rag:sync, rag:rebuild) are responsible for their own
-     * try/catch around each call.
+     * try/catch around each call. It does fire RagSyncFailed before
+     * rethrowing, so observability doesn't depend on which caller it was.
+     *
+     * Returns true when the document was actually (re)written — the same
+     * condition RagDocumentSynced fires on — and false when it
+     * short-circuited on an unchanged hash pair.
      */
-    public function sync(bool $force = false): void
+    public function sync(bool $force = false): bool
+    {
+        try {
+            $document = $this->performSync($force);
+        } catch (Throwable $e) {
+            RagSyncFailed::dispatch($this->model, $e);
+
+            throw $e;
+        }
+
+        if ($document === null) {
+            return false;
+        }
+
+        RagDocumentSynced::dispatch($this->model, $document, $force);
+
+        return true;
+    }
+
+    private function performSync(bool $force): ?RagDocument
     {
         // attach()/detach()/sync() on a belongsToMany relation (the
         // ADR-0007 resyncRag() case) update the pivot table but do not
@@ -93,7 +122,7 @@ final class RagSynchronizer
             && $existing->content_hash === $contentHash
             && $existing->configuration_hash === $configurationHash
         ) {
-            return;
+            return null;
         }
 
         // A changed configuration_hash means the embedding provider, model,
@@ -106,7 +135,7 @@ final class RagSynchronizer
 
         $connectionName = $this->connectionName();
 
-        DB::connection($connectionName)->transaction(function () use ($connectionName, $existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash, $configurationChanged): void {
+        return DB::connection($connectionName)->transaction(function () use ($connectionName, $existing, $force, $rendered, $chunkOptions, $contentHash, $configurationHash, $configurationChanged): RagDocument {
             $values = [
                 'content_hash' => $contentHash,
                 'configuration_hash' => $configurationHash,
@@ -133,6 +162,8 @@ final class RagSynchronizer
 
             $this->reconcileChunks($document, $rendered, $chunkOptions, $configurationChanged);
             $this->reconcileDependencies($document);
+
+            return $document;
         });
     }
 
@@ -186,19 +217,56 @@ final class RagSynchronizer
      * re-derived here assuming the currently-stored chunk_index values are
      * still current.
      *
+     * Fires RagDocumentEmbedded when this call wrote at least one embedding
+     * and left the document fully embedded, and RagEmbeddingFailed (then
+     * rethrows) on any failure.
+     *
      * @throws UnsupportedVectorBackend
      * @throws InvalidEmbeddingResponse
      */
     public function embed(): void
+    {
+        try {
+            [$document, $embeddedChunks] = $this->performEmbed();
+        } catch (Throwable $e) {
+            RagEmbeddingFailed::dispatch($this->model, $e);
+
+            throw $e;
+        }
+
+        if ($document === null || $embeddedChunks === 0) {
+            return;
+        }
+
+        // Re-read rather than refresh(): a concurrent forget can delete the
+        // row in between, which should mean "no event", not an exception.
+        $embedded = $document->newQuery()
+            ->whereKey($document->getKey())
+            ->where('status', 'synced')
+            ->first();
+
+        if ($embedded !== null) {
+            RagDocumentEmbedded::dispatch($this->model, $embedded, $embeddedChunks);
+        }
+    }
+
+    /**
+     * @return array{0: RagDocument|null, 1: int} The document (null if
+     *                                            there is none yet) and
+     *                                            how many chunk embeddings
+     *                                            this call wrote.
+     */
+    private function performEmbed(): array
     {
         $connectionName = $this->connectionName();
 
         VectorBackendCapability::ensureUsable($connectionName);
 
         $document = $this->findDocument();
+        $embeddedChunks = 0;
 
         if ($document === null) {
-            return;
+            return [null, 0];
         }
 
         $pendingChunks = $document->chunks()->whereNull('embedding')->orderBy('chunk_index')->get();
@@ -312,7 +380,7 @@ final class RagSynchronizer
                         // through the fetched *model* rather than a query-builder
                         // mass update so AsVector's cast still applies; a plain
                         // array write bypasses it and MariaDB rejects the value.
-                        $document->chunks()
+                        $written = $document->chunks()
                             ->where('id', $chunk->id)
                             ->where('content_hash', $chunk->content_hash)
                             ->first()
@@ -323,6 +391,10 @@ final class RagSynchronizer
                                 'embedding_dimensions' => $dimensions,
                                 'embedding_hash' => Hasher::embedding($chunk->content_hash, $resolvedProvider, $model, $dimensions),
                             ]);
+
+                        if ($written === true) {
+                            $embeddedChunks++;
+                        }
                     }
                 }
             }
@@ -346,6 +418,8 @@ final class RagSynchronizer
             ->where('configuration_hash', $document->configuration_hash)
             ->whereDoesntHave('chunks', fn ($query) => $query->whereNull('embedding'))
             ->update(['status' => 'synced']);
+
+        return [$document, $embeddedChunks];
     }
 
     private function findDocument(): ?RagDocument

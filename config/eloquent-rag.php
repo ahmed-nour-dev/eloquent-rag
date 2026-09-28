@@ -37,11 +37,21 @@ return [
     | `provider` is null by default, meaning "use laravel/ai's own
     | config('ai.default_for_embeddings')" — set it explicitly to pin a
     | specific provider regardless of the app's general AI default.
+    |
+    | `auto` chains embedding onto the queued lifecycle sync: when a save
+    | (or a dependency fan-out) actually changes a document, an
+    | EmbedRagDocuments job is queued for it, so it becomes searchable
+    | without running `php artisan rag:sync`. Off by default because it
+    | makes every content-changing save call your embedding provider (cost,
+    | rate limits). `auto_batch_size` bounds how many documents one
+    | EmbedRagDocuments job embeds. See docs/definition-api.md#automatic-embedding.
     */
     'embedding' => [
         'provider' => null,
         'model' => 'text-embedding-3-small',
         'dimensions' => 1536,
+        'auto' => (bool) env('RAG_AUTO_EMBED', false),
+        'auto_batch_size' => 50,
     ],
 
     /*

@@ -18,8 +18,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * FAIL-level checks (Laravel version, missing vector support, dimension
  * mismatch) drive a non-zero exit code, so this is safe to wire into CI or
- * a deploy step. WARN-level checks (sync queue, orphaned rows, failed
- * documents, failed jobs) are operational hygiene signals, not blockers.
+ * a deploy step. WARN-level checks (sync queue, orphaned rows, unembedded
+ * documents, failed documents, failed jobs) are operational hygiene
+ * signals, not blockers.
  */
 class RagDoctorCommand extends Command
 {
@@ -61,6 +62,7 @@ class RagDoctorCommand extends Command
 
         $this->checkQueueDriver();
         $this->checkOrphanedDependencies();
+        $this->checkUnembeddedDocuments();
         $this->checkFailedDocuments();
         $this->checkFailedJobs();
 
@@ -238,6 +240,32 @@ class RagDoctorCommand extends Command
         }
 
         $this->info('[PASS] No orphaned rag_dependencies rows.');
+    }
+
+    /**
+     * Issue #64: a save only runs the structural sync(); embedding is a
+     * separate step. Without config('eloquent-rag.embedding.auto'), a
+     * freshly synced document stays 'pending' — and invisible to search —
+     * until someone runs rag:sync. That's the most common first-run
+     * surprise ("searchRag() returns nothing"), so say so explicitly.
+     */
+    private function checkUnembeddedDocuments(): void
+    {
+        $count = DB::connection($this->connection)->table('rag_documents')->where('status', 'pending')->count();
+
+        if ($count === 0) {
+            $this->info('[PASS] No documents are waiting for embeddings.');
+
+            return;
+        }
+
+        if (config('eloquent-rag.embedding.auto', false)) {
+            $this->warn("[WARN] {$count} document(s) are synced but have no embeddings yet (status = 'pending'), so search can't find them. embedding.auto is on, so these should be picked up by queued EmbedRagDocuments jobs — if the count doesn't drop, check that a queue worker is running, or run `php artisan rag:sync` to embed them now.");
+
+            return;
+        }
+
+        $this->warn("[WARN] {$count} document(s) are synced but have no embeddings yet (status = 'pending'), so search can't find them. Saving a model only syncs it — run `php artisan rag:sync` to generate embeddings, or set eloquent-rag.embedding.auto (RAG_AUTO_EMBED=true) to embed automatically after each queued sync.");
     }
 
     private function checkFailedDocuments(): void

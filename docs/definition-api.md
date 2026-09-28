@@ -95,14 +95,17 @@ something actually changed — reconciles the `rag_documents` /
 and never requires a vector-capable backend; it's a plain structural
 operation you can run against SQLite in a test.
 
-**`embed()`** requires a supported backend (it calls
-`VectorBackendCapability::ensureSupported()` first, throwing
-`UnsupportedVectorBackend` immediately if not) and generates real
+`sync()` returns `true` when it actually rewrote the document and `false`
+when it short-circuited on unchanged content.
+
+**`embed()`** requires a supported backend, or the opt-in
+[portable fallback](backend-support.md#portable-fallback) (it throws
+`UnsupportedVectorBackend` immediately otherwise), and generates real
 embeddings via `laravel/ai` for any chunk that doesn't have one yet. It is
-**not** called automatically by `sync()` or by the automatic lifecycle
-hooks below — see [backend-support.md](backend-support.md) for why that
-separation matters, and use `php artisan rag:sync` to run both together
-for real operational work.
+**not** called by `sync()` itself — see
+[backend-support.md](backend-support.md) for why that separation matters.
+Use `php artisan rag:sync` to run both together, or turn on
+[automatic embedding](#automatic-embedding).
 
 ## Automatic lifecycle
 
@@ -111,6 +114,70 @@ events automatically queue a structural `sync()` (dispatched only after
 the enclosing transaction commits — [ADR-0006](adr/0006-transaction-queue-boundary.md)),
 and `deleted` removes its document (chunks and dependencies cascade).
 Nothing needs to be called manually for normal create/update/delete flows.
+
+> **First-run gotcha:** by default a save only runs the *structural*
+> `sync()`. The document exists, but it has no embeddings yet
+> (`status = 'pending'`), so `searchRag()` right after saving returns
+> nothing until embeddings are generated. Either run
+> `php artisan rag:sync`, or enable automatic embedding below.
+> `php artisan rag:doctor` warns when documents are waiting for
+> embeddings.
+
+## Automatic embedding
+
+```php
+// config/eloquent-rag.php — or RAG_AUTO_EMBED=true in .env
+'embedding' => [
+    // ...
+    'auto' => true,
+    'auto_batch_size' => 50,
+],
+```
+
+With `embedding.auto` on, whenever the queued lifecycle sync (or a
+dependency fan-out) actually rewrites a document, an `EmbedRagDocuments`
+job is queued for it, in batches of `auto_batch_size`. Documents whose
+content didn't change are skipped. Embedding failures are recorded on the
+document row (`status = 'failed'`, `last_error`), where `rag:doctor` and
+`rag:status` report them, and never fail the rest of the batch.
+
+It's off by default because every content-changing save then calls your
+embedding provider — mind cost and rate limits for write-heavy models.
+Direct `$model->rag()->sync()` calls are unaffected: only the queued
+lifecycle and fan-out path chains embedding.
+
+## Lifecycle events
+
+Hook into sync and embedding without polling `rag:status` — for logging,
+Horizon tags, metrics, or a Pulse card:
+
+| Event | When |
+|---|---|
+| `Ahmednour\EloquentRag\Events\RagDocumentSynced` | `sync()` actually rewrote a document (not on an unchanged short-circuit). Has `model`, `document`, `forced` (`true` for `rag:rebuild`). |
+| `Ahmednour\EloquentRag\Events\RagDocumentEmbedded` | `embed()` wrote at least one embedding and the document is now fully embedded, i.e. searchable. Has `model`, `document`, `embeddedChunks`. |
+| `Ahmednour\EloquentRag\Events\RagSyncFailed` | `sync()` threw. Has `model`, `exception`. |
+| `Ahmednour\EloquentRag\Events\RagEmbeddingFailed` | `embed()` threw (unsupported backend, provider error, invalid response). Has `model`, `exception`. |
+
+They fire from every path — the queued lifecycle jobs, fan-out, the CLI
+commands, and direct calls. The two success events implement
+`ShouldDispatchAfterCommit`, so inside a transaction they're held until it
+commits. The failure events fire just before the exception propagates;
+the queued jobs and CLI commands then record the failure on the document
+row as before.
+
+```php
+use Ahmednour\EloquentRag\Events\RagEmbeddingFailed;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+
+Event::listen(function (RagEmbeddingFailed $event) {
+    Log::warning('RAG embedding failed', [
+        'model' => $event->model::class,
+        'id' => $event->model->getKey(),
+        'error' => $event->exception->getMessage(),
+    ]);
+});
+```
 
 ## What's *not* automatic
 
@@ -122,8 +189,8 @@ Nothing needs to be called manually for normal create/update/delete flows.
 - **Mass updates and bulk inserts** — `Category::where(...)->update()` and
   `DB::table(...)->insert()` bypass Eloquent events entirely. Use
   `Rag::invalidate()` — see [fanout-behavior.md](fanout-behavior.md#the-mass-update-and-pivot-limitations).
-- **Embedding** — always an explicit step (`embed()`, or `rag:sync`/`rag:rebuild`),
-  never automatic.
+- **Embedding** — an explicit step (`embed()`, or `rag:sync`/`rag:rebuild`)
+  unless you enable [automatic embedding](#automatic-embedding).
 
 ## Search
 
