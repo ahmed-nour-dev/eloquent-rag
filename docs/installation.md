@@ -128,7 +128,7 @@ documents that reference it — e.g. a tenant's `Product` depending on that
 same tenant's `Category`. Cross-connection dependency graphs are not
 supported.
 
-### `rag:status`, `rag:prune`, `rag:doctor`, `rag:sync`, `rag:rebuild`
+### `rag:status`, `rag:prune`, `rag:doctor`, `rag:sync`, `rag:rebuild`, `rag:verify`
 
 These commands operate on one connection per invocation. When no model
 class is given (bulk mode), pass `--connection=` to target a connection
@@ -139,10 +139,11 @@ php artisan rag:status --connection=tenant
 php artisan rag:doctor --connection=tenant
 php artisan rag:prune --connection=tenant
 php artisan rag:sync --connection=tenant
+php artisan rag:verify --connection=tenant
 ```
 
 For a multi-connection setup, run the command once per connection.
-`rag:sync`/`rag:rebuild` with an explicit model argument, and
+`rag:sync`/`rag:rebuild`/`rag:verify` with an explicit model argument, and
 `rag:forget`/`rag:dependencies` (which always require one), ignore
 `--connection` — the given model's own connection is used instead.
 

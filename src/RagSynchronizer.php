@@ -23,6 +23,7 @@ use Ahmednour\EloquentRag\Support\RelationPathValidator;
 use Ahmednour\EloquentRag\Support\TokenizerFactory;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Embeddings;
 use Throwable;
@@ -91,35 +92,7 @@ final class RagSynchronizer
 
     private function performSync(bool $force): ?RagDocument
     {
-        // attach()/detach()/sync() on a belongsToMany relation (the
-        // ADR-0007 resyncRag() case) update the pivot table but do not
-        // clear the model's already-loaded relation cache. Rendering
-        // against a stale cached relation would silently reuse the old
-        // value, produce an unchanged content_hash, and short-circuit
-        // before the dependency rows are ever reconciled. Clearing the
-        // cache forces every relation the definition touches to be
-        // re-read from current database state on every sync().
-        $this->model->unsetRelations();
-
-        // Fails loudly on a mistyped or restructured declared path (per
-        // ADR-0002) before anything is rendered, hashed, or written —
-        // rather than the path silently resolving to an empty dependency
-        // set further down in reconcileDependencies().
-        foreach ($this->definition->relations() as $path) {
-            RelationPathValidator::validate($this->model, $path);
-        }
-
-        $rendered = (new RagDocumentBuilder)->render($this->model, $this->definition);
-        $chunkOptions = $this->chunkOptions();
-
-        $contentHash = Hasher::content($rendered);
-        $configurationHash = Hasher::configuration(
-            $this->definition,
-            $chunkOptions,
-            config('eloquent-rag.embedding.provider'),
-            (string) config('eloquent-rag.embedding.model'),
-            (int) config('eloquent-rag.embedding.dimensions'),
-        );
+        ['rendered' => $rendered, 'chunk_options' => $chunkOptions, 'content_hash' => $contentHash, 'configuration_hash' => $configurationHash] = $this->renderAndHash();
 
         $existing = $this->findDocument();
 
@@ -454,6 +427,90 @@ final class RagSynchronizer
         return [$document, $embeddedChunks];
     }
 
+    /**
+     * Read-only drift check for rag:verify (issue #68): compares what
+     * sync() would write now against what's stored, without writing
+     * anything. Catches the silent failure modes no event can — a
+     * belongsToMany attach()/detach() without resyncRag(), a mass update
+     * or bulk insert without Rag::invalidate() — after the fact, even
+     * though it can't say which of them caused the drift. Returns an empty
+     * list when the stored document is current.
+     *
+     * @return list<'missing'|'content'|'configuration'|'dependencies'>
+     */
+    public function inspect(): array
+    {
+        ['content_hash' => $contentHash, 'configuration_hash' => $configurationHash] = $this->renderAndHash();
+
+        $document = $this->findDocument();
+
+        if ($document === null) {
+            return ['missing'];
+        }
+
+        $drift = [];
+
+        if ($document->content_hash !== $contentHash) {
+            $drift[] = 'content';
+        }
+
+        if ($document->configuration_hash !== $configurationHash) {
+            $drift[] = 'configuration';
+        }
+
+        $stored = $document->dependencies()->get()
+            ->map(fn (RagDependency $dependency): string => $dependency->dependency_type.':'.$dependency->dependency_id)
+            ->sort()->values()->all();
+
+        $desired = $this->desiredDependencies()->keys()->sort()->values()->all();
+
+        if ($stored !== $desired) {
+            $drift[] = 'dependencies';
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return array{rendered: string, chunk_options: array{max_tokens: int, overlap: int, tokenizer: string}, content_hash: string, configuration_hash: string}
+     */
+    private function renderAndHash(): array
+    {
+        // attach()/detach()/sync() on a belongsToMany relation (the
+        // ADR-0007 resyncRag() case) update the pivot table but do not
+        // clear the model's already-loaded relation cache. Rendering
+        // against a stale cached relation would silently reuse the old
+        // value, produce an unchanged content_hash, and short-circuit
+        // before the dependency rows are ever reconciled. Clearing the
+        // cache forces every relation the definition touches to be
+        // re-read from current database state on every sync().
+        $this->model->unsetRelations();
+
+        // Fails loudly on a mistyped or restructured declared path (per
+        // ADR-0002) before anything is rendered, hashed, or written —
+        // rather than the path silently resolving to an empty dependency
+        // set further down in reconcileDependencies().
+        foreach ($this->definition->relations() as $path) {
+            RelationPathValidator::validate($this->model, $path);
+        }
+
+        $rendered = (new RagDocumentBuilder)->render($this->model, $this->definition);
+        $chunkOptions = $this->chunkOptions();
+
+        return [
+            'rendered' => $rendered,
+            'chunk_options' => $chunkOptions,
+            'content_hash' => Hasher::content($rendered),
+            'configuration_hash' => Hasher::configuration(
+                $this->definition,
+                $chunkOptions,
+                config('eloquent-rag.embedding.provider'),
+                (string) config('eloquent-rag.embedding.model'),
+                (int) config('eloquent-rag.embedding.dimensions'),
+            ),
+        ];
+    }
+
     private function findDocument(): ?RagDocument
     {
         return RagDocument::on($this->connectionName())
@@ -528,27 +585,9 @@ final class RagSynchronizer
      */
     private function reconcileDependencies(RagDocument $document): void
     {
-        $dependencies = collect();
-
-        foreach ($this->definition->relations() as $path) {
-            // Drop the leaf attribute — the document depends on the
-            // related *model*, not its individual field.
-            $segments = explode('.', $path);
-            array_pop($segments);
-
-            foreach ($this->resolveRelatedModels($this->model, $segments) as $related) {
-                $dependencies->push([
-                    'dependency_type' => $related::class,
-                    'dependency_id' => $related->getKey(),
-                ]);
-            }
-        }
-
         $key = fn (string $type, int|string $id): string => $type.':'.$id;
 
-        $desired = $dependencies->keyBy(
-            fn (array $dependency) => $key($dependency['dependency_type'], $dependency['dependency_id'])
-        );
+        $desired = $this->desiredDependencies();
 
         // ->toBase() drops down to a plain Support Collection: Eloquent
         // Collection overrides except()/only() to filter by the model's
@@ -567,6 +606,35 @@ final class RagSynchronizer
         foreach ($desired->except($existing->keys()->all()) as $dependency) {
             $document->dependencies()->create($dependency);
         }
+    }
+
+    /**
+     * The dependency set this model's definition resolves to right now,
+     * keyed "Type:id".
+     *
+     * @return Collection<string, array{dependency_type: string, dependency_id: int|string}>
+     */
+    private function desiredDependencies(): Collection
+    {
+        $dependencies = collect();
+
+        foreach ($this->definition->relations() as $path) {
+            // Drop the leaf attribute — the document depends on the
+            // related *model*, not its individual field.
+            $segments = explode('.', $path);
+            array_pop($segments);
+
+            foreach ($this->resolveRelatedModels($this->model, $segments) as $related) {
+                $dependencies->push([
+                    'dependency_type' => $related::class,
+                    'dependency_id' => $related->getKey(),
+                ]);
+            }
+        }
+
+        return $dependencies->keyBy(
+            fn (array $dependency): string => $dependency['dependency_type'].':'.$dependency['dependency_id']
+        );
     }
 
     /**

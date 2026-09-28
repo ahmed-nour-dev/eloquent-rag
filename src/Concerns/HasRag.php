@@ -9,7 +9,10 @@ use Ahmednour\EloquentRag\RagSearch;
 use Ahmednour\EloquentRag\RagSearchResult;
 use Ahmednour\EloquentRag\RagSynchronizer;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 
 /**
  * Wires a model into the RAG sync lifecycle: created/updated/restored queue
@@ -45,6 +48,72 @@ trait HasRag
     public function resyncRag(): void
     {
         $this->rag()->sync();
+    }
+
+    /**
+     * `$this->{$relation}()->attach(...)` followed by resyncRag(), as one
+     * call — so the ADR-0007 pivot gotcha can't be forgotten at the call
+     * site (issue #68).
+     *
+     * @param  mixed  $ids  Anything BelongsToMany::attach() accepts.
+     * @param  array<string, mixed>  $attributes
+     */
+    public function attachRag(string $relation, mixed $ids, array $attributes = [], bool $touch = true): void
+    {
+        $this->ragPivotRelation($relation)->attach($ids, $attributes, $touch);
+
+        $this->resyncRag();
+    }
+
+    /**
+     * `$this->{$relation}()->detach(...)` followed by resyncRag().
+     *
+     * @param  mixed  $ids  Anything BelongsToMany::detach() accepts; null
+     *                      detaches everything.
+     * @return int The number of detached records.
+     */
+    public function detachRag(string $relation, mixed $ids = null, bool $touch = true): int
+    {
+        $detached = $this->ragPivotRelation($relation)->detach($ids, $touch);
+
+        $this->resyncRag();
+
+        return $detached;
+    }
+
+    /**
+     * `$this->{$relation}()->sync(...)` followed by resyncRag(). (Named
+     * syncRagRelation() rather than syncRag() to keep it visibly distinct
+     * from rag()->sync(), which re-syncs the document, not a relation.)
+     *
+     * @param  mixed  $ids  Anything BelongsToMany::sync() accepts.
+     * @return array{attached: array<int, mixed>, detached: array<int, mixed>, updated: array<int, mixed>}
+     */
+    public function syncRagRelation(string $relation, mixed $ids, bool $detaching = true): array
+    {
+        $changes = $this->ragPivotRelation($relation)->sync($ids, $detaching);
+
+        $this->resyncRag();
+
+        return $changes;
+    }
+
+    /**
+     * @return BelongsToMany<Model, $this>
+     */
+    private function ragPivotRelation(string $relation): BelongsToMany
+    {
+        $instance = method_exists($this, $relation) ? $this->{$relation}() : null;
+
+        if (! $instance instanceof BelongsToMany) {
+            throw new InvalidArgumentException(sprintf(
+                '%s::%s() is not a belongsToMany relation — attachRag()/detachRag()/syncRagRelation() only apply to pivot relations.',
+                static::class,
+                $relation,
+            ));
+        }
+
+        return $instance;
     }
 
     /**

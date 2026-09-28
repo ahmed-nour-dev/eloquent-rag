@@ -1,7 +1,7 @@
 # Rebuild, sync, and cleanup
 
-Four commands cover normal operation, forced rebuilds, and cleanup. All
-seven `rag:*` commands are listed in [installation.md](installation.md);
+Five commands cover normal operation, forced rebuilds, drift detection, and cleanup. All
+eight `rag:*` commands are listed in [installation.md](installation.md);
 this page is about choosing the right one.
 
 ## `rag:sync` — normal operation
@@ -83,3 +83,22 @@ Both work by querying `rag_documents` directly rather than hydrating the
 model — `rag:forget` in particular is meant to work even when the
 underlying model row is already gone, as a manual escape hatch alongside
 `rag:prune`.
+
+## `rag:verify` — detecting drift
+
+```bash
+php artisan rag:verify [model] [--sample=N] [--fix] [--connection=...]
+```
+
+Re-renders each document's model and compares it against what's stored
+(`content_hash`, `configuration_hash`, and dependency rows) without writing
+anything. Drift means some write path changed a model's data without the
+package hearing about it — typically a `belongsToMany` attach/detach
+without `resyncRag()`, or a mass update/bulk insert without
+`Rag::invalidate()` (see
+[fanout-behavior.md](fanout-behavior.md#the-mass-update-and-pivot-limitations)).
+With a `model` argument (and no `--sample`) it also finds rows of that
+model that have no document at all. `--fix` re-syncs everything it finds;
+without it, the command exits non-zero when drift exists. Documents whose
+model row no longer exists are reported but left for `rag:prune`.
+
